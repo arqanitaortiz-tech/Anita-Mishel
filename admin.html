@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Administración · Anita Mishel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+
+    <!-- ============================================
+         BARRA SUPERIOR
+    ============================================ -->
+    <header class="admin-header">
+        <div class="admin-header-inner">
+            <a href="index.html" class="admin-logo">Anita Mishel <span>· Admin</span></a>
+            <div class="admin-header-actions">
+                <span class="admin-count" id="adminCount">0 clientes</span>
+                <a href="index.html" class="btn btn-ghost">Ver sitio</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="admin-main">
+        <div class="admin-container">
+
+            <!-- ============================================
+                 TÍTULO + ACCIÓN
+            ============================================ -->
+            <div class="admin-topbar">
+                <div>
+                    <h1 class="admin-title">Clientes activos</h1>
+                    <p class="admin-subtitle">Administra los accesos y el avance de cada cliente.</p>
+                </div>
+                <button class="btn btn-primary" id="btnNuevo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Crear cliente
+                </button>
+            </div>
+
+            <!-- ============================================
+                 BUSCADOR
+            ============================================ -->
+            <div class="admin-search">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="buscador" placeholder="Buscar por nombre, universidad o carrera...">
+            </div>
+
+            <!-- ============================================
+                 LISTA DE CLIENTES (se llena con JS)
+            ============================================ -->
+            <div class="clientes-grid" id="clientesGrid"></div>
+
+            <!-- Estado vacío -->
+            <div class="empty-state" id="emptyState" hidden>
+                <div class="empty-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+                <h3>Aún no hay clientes</h3>
+                <p>Crea tu primer cliente para asignarle usuario, clave y comenzar a registrar su avance.</p>
+                <button class="btn btn-primary" id="btnNuevoVacio">Crear primer cliente</button>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ============================================
+         MODAL: CREAR / EDITAR CLIENTE
+    ============================================ -->
+    <div class="modal-overlay" id="modalOverlay" hidden>
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-head">
+                <h2 id="modalTitle">Nuevo cliente</h2>
+                <button class="modal-close" id="modalClose" aria-label="Cerrar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <form id="clienteForm" class="modal-body">
+                <input type="hidden" id="clienteId">
+
+                <div class="form-section-label">Datos del cliente</div>
+
+                <div class="form-group">
+                    <label for="nombre">Nombre completo</label>
+                    <input type="text" id="nombre" required placeholder="Ej. Carlos Ramírez">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="universidad">Universidad</label>
+                        <input type="text" id="universidad" required placeholder="Ej. Universidad Central del Ecuador">
+                    </div>
+                    <div class="form-group">
+                        <label for="carrera">Carrera / Programa</label>
+                        <input type="text" id="carrera" required placeholder="Ej. Maestría en Educación">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="nivel">Nivel</label>
+                    <select id="nivel">
+                        <option value="Posgrado">Posgrado</option>
+                        <option value="Pregrado">Pregrado</option>
+                    </select>
+                </div>
+
+                <div class="form-section-label">Acceso del cliente</div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="usuario">Usuario</label>
+                        <input type="text" id="usuario" required autocomplete="off" placeholder="Ej. carlos.ramirez">
+                    </div>
+                    <div class="form-group">
+                        <label for="clave">Clave</label>
+                        <div class="clave-wrap">
+                            <input type="text" id="clave" required autocomplete="off" placeholder="Clave asignada">
+                            <button type="button" class="btn-mini" id="btnGenerar" title="Generar clave">Generar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section-label">Avance</div>
+
+                <div class="form-group">
+                    <label for="avanceTesis">Elaboración de tesis · <span id="valTesis">0</span>%</label>
+                    <input type="range" id="avanceTesis" min="0" max="100" value="0" step="5" class="range range-tesis">
+                </div>
+
+                <div class="form-group">
+                    <label for="avancePagos">Pagos · <span id="valPagos">0</span>%</label>
+                    <input type="range" id="avancePagos" min="0" max="100" value="0" step="5" class="range range-pagos">
+                </div>
+
+                <!-- BITÁCORA: solo visible al editar un cliente ya creado -->
+                <div class="bitacora-admin" id="bitacoraAdmin" hidden>
+                    <div class="form-section-label">Bitácora de avance</div>
+
+                    <div class="bitacora-add-box">
+                        <div class="bitacora-form-row">
+                            <div class="form-group" style="margin:0;">
+                                <label for="bitFecha">Fecha</label>
+                                <input type="date" id="bitFecha">
+                            </div>
+                            <div class="form-group" style="margin:0;">
+                                <label for="bitActividad">Actividad realizada</label>
+                                <input type="text" id="bitActividad" placeholder="Ej. Revisión del capítulo 2">
+                            </div>
+                        </div>
+                        <textarea id="bitNotas" placeholder="Notas del asesor (opcional)..."></textarea>
+                        <button type="button" class="btn-mini" id="btnAddBitacora">+ Agregar entrada</button>
+                    </div>
+
+                    <div class="bitacora-lista" id="bitacoraLista"></div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-danger-ghost" id="btnEliminar" hidden>Eliminar cliente</button>
+                    <div class="modal-actions-right">
+                        <button type="button" class="btn btn-ghost" id="btnCancelar">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast de confirmación -->
+    <div class="toast" id="toast" hidden></div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
