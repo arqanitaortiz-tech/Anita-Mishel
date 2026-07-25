@@ -603,6 +603,75 @@ input, select, button { font-family: inherit; }
 }
 
 /* ============================================
+   LOGIN DEL ADMIN
+============================================ */
+.admin-login {
+    position: fixed;
+    inset: 0;
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at 20% 20%, rgba(107,123,94,0.10), transparent 45%),
+        radial-gradient(circle at 80% 80%, rgba(44,62,80,0.10), transparent 45%),
+        var(--color-cream);
+}
+.admin-login[hidden] { display: none; }
+
+.admin-login-card {
+    background: var(--color-white);
+    border-radius: 20px;
+    padding: 44px 40px;
+    box-shadow: var(--shadow-medium);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+.admin-login-logo {
+    font-family: var(--font-serif);
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--color-navy);
+}
+.admin-login-logo span { color: var(--color-olive); font-size: 0.9rem; }
+.admin-login-sub { color: var(--color-text-light); font-size: 0.92rem; margin-bottom: 28px; }
+.admin-login form { text-align: left; }
+.admin-login .form-group input {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1.5px solid var(--color-border);
+    border-radius: 10px;
+    font-size: 0.95rem;
+    background: var(--color-cream);
+    color: var(--color-text);
+    transition: var(--transition);
+}
+.admin-login .form-group input:focus { outline: none; border-color: var(--color-olive); background: var(--color-white); }
+.btn-block-admin { width: 100%; margin-top: 6px; }
+.admin-login-error { color: var(--color-danger); font-size: 0.88rem; text-align: center; margin: 0 0 14px; }
+.admin-login-back {
+    display: inline-block;
+    margin-top: 20px;
+    font-size: 0.86rem;
+    color: var(--color-text-muted);
+    transition: var(--transition);
+}
+.admin-login-back:hover { color: var(--color-olive); }
+
+.acceso-nota {
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+    font-style: italic;
+    margin-top: -4px;
+}
+
+/* Oculta el contenido hasta autenticar */
+body.no-auth .admin-header,
+body.no-auth .admin-main { display: none; }
+
+/* ============================================
    RESPONSIVE
 ============================================ */
 @media (max-width: 640px) {
