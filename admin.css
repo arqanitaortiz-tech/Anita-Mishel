@@ -590,11 +590,36 @@ input, select, button { font-family: inherit; }
 .bitacora-item-act { font-size: 0.92rem; font-weight: 600; color: var(--color-navy); }
 .bitacora-item-notas { font-size: 0.85rem; color: var(--color-text-light); margin-top: 2px; }
 .bitacora-item-cli {
-    font-size: 0.78rem;
-    color: var(--color-text-muted);
-    margin-top: 6px;
-    padding-top: 6px;
+    font-size: 0.85rem;
+    color: var(--color-text);
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px dashed var(--color-border);
+}
+.bitacora-cli-etq {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--color-terracotta);
+    margin-bottom: 4px;
+}
+.bitacora-nota-cli {
+    background: var(--color-cream);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+}
+.bitacora-nota-cli:last-child { margin-bottom: 0; }
+.bitacora-doc {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-olive-dark);
+    text-decoration: underline;
+    cursor: pointer;
 }
 .bitacora-vacia { font-size: 0.85rem; color: var(--color-text-muted); text-align: center; padding: 12px 0; }
 
