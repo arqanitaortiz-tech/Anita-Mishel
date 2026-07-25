@@ -1,53 +1,27 @@
 /* ============================================================
-   DASHBOARD DEL CLIENTE — Anita Mishel
+   DASHBOARD DEL CLIENTE — Anita Mishel (conectado a Supabase)
    ------------------------------------------------------------
-   TEMPORAL: lee y escribe en localStorage (mismos datos que el
-   panel de admin). Sesión en sessionStorage. Sin backend, no es
-   seguro y el PDF de cédula / documentos NO se almacenan de
-   verdad (solo el nombre). Se reemplaza al conectar la BD.
+   Lee los datos del cliente, su bitácora y sus notas desde
+   Supabase. El PDF de cédula y los documentos se suben al
+   almacenamiento privado. Cada cliente solo ve lo suyo (RLS).
    ============================================================ */
 
-const STORAGE_KEY = 'anita_clientes';
-const SESSION_KEY = 'anita_sesion';
-
-/* ----------  DATOS  ---------- */
-function cargarClientes() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-    catch (e) { return []; }
-}
-function guardarClientes(lista) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
-}
-
-// Sesión
-const sesionId = sessionStorage.getItem(SESSION_KEY);
-if (!sesionId) { window.location.href = 'login.html'; }
-
-let clientes = cargarClientes();
-let cliente  = clientes.find(c => c.id === sesionId);
-if (!cliente) { sessionStorage.removeItem(SESSION_KEY); window.location.href = 'login.html'; }
-
-/* ----------  REFERENCIAS  ---------- */
 const toast = document.getElementById('toast');
+const BUCKET = 'documentos';
+
+let userId  = null;
+let cliente = null;
 
 /* ----------  UTILIDADES  ---------- */
-function persistir() {
-    const idx = clientes.findIndex(c => c.id === cliente.id);
-    clientes[idx] = cliente;
-    guardarClientes(clientes);
-}
-
 function escapeHtml(str) {
-    return String(str || '').replace(/[&<>"']/g, c => (
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
 }
-
 function fechaLarga(iso) {
     const d = new Date(iso + 'T00:00:00');
     return d.toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
-
 function mostrarToast(msg) {
     toast.textContent = msg;
     toast.hidden = false;
@@ -56,10 +30,38 @@ function mostrarToast(msg) {
     mostrarToast._t = setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => { toast.hidden = true; }, 300);
-    }, 2600);
+    }, 2800);
+}
+function slug(nombre) {
+    return (nombre || 'archivo').toLowerCase().replace(/[^a-z0-9.\-]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-/* ----------  PINTAR ENCABEZADO Y BARRAS  ---------- */
+/* ============================================================
+   ARRANQUE: sesión + carga de datos
+   ============================================================ */
+async function init() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+    userId = session.user.id;
+
+    // Cargar el registro del cliente (RLS: solo devuelve el suyo)
+    const { data, error } = await sb.from('clientes').select('*').eq('user_id', userId).limit(1);
+    if (error) { mostrarToast('Error al cargar tus datos.'); return; }
+
+    if (!data || data.length === 0) {
+        // La sesión no corresponde a un cliente (p. ej. es el admin)
+        document.querySelector('.cli-container').innerHTML =
+            '<div class="bitacora-empty" style="margin-top:40px;">Esta cuenta no tiene un perfil de cliente. Si eres administradora, entra por el panel de administración.</div>';
+        return;
+    }
+
+    cliente = data[0];
+    pintarInfo();
+    await pintarBitacora();
+    await revisarOnboarding();
+}
+
+/* ----------  ENCABEZADO Y BARRAS  ---------- */
 function pintarInfo() {
     const primerNombre = (cliente.nombre || '').split(/\s+/)[0];
     document.getElementById('cliHola').textContent = primerNombre ? `Hola, ${primerNombre}` : '';
@@ -67,38 +69,46 @@ function pintarInfo() {
     document.getElementById('cliPrograma').textContent =
         [cliente.universidad, cliente.carrera].filter(Boolean).join(' · ');
 
-    const t = cliente.tesis || 0;
-    const p = cliente.pagos || 0;
+    const t = cliente.avance_tesis || 0;
+    const p = cliente.avance_pagos || 0;
     document.getElementById('pctTesis').textContent = t + '%';
     document.getElementById('pctPagos').textContent = p + '%';
     document.getElementById('fillTesis').style.width = t + '%';
     document.getElementById('fillPagos').style.width = p + '%';
 }
 
-/* ----------  PINTAR BITÁCORA  ---------- */
-function pintarBitacora() {
+/* ----------  BITÁCORA  ---------- */
+async function pintarBitacora() {
     const timeline = document.getElementById('timeline');
     const empty = document.getElementById('bitacoraEmpty');
-    const entradas = cliente.bitacora || [];
 
-    if (entradas.length === 0) {
+    const [{ data: entradas, error }, { data: notas }] = await Promise.all([
+        sb.from('bitacora').select('*').eq('cliente_id', cliente.id).order('fecha', { ascending: true }),
+        sb.from('notas_cliente').select('*').eq('cliente_id', cliente.id).order('creado', { ascending: true })
+    ]);
+
+    if (error) { mostrarToast('Error al cargar la bitácora.'); return; }
+
+    if (!entradas || entradas.length === 0) {
         timeline.innerHTML = '';
         empty.hidden = false;
         return;
     }
     empty.hidden = true;
 
-    // Orden cronológico: la primera arriba, las nuevas debajo
-    const orden = [...entradas].sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+    const notasPorEntrada = {};
+    (notas || []).forEach(n => {
+        (notasPorEntrada[n.bitacora_id] = notasPorEntrada[n.bitacora_id] || []).push(n);
+    });
 
-    timeline.innerHTML = orden.map(e => {
-        const notasCliente = (e.notasCliente || []).map(n => `
+    timeline.innerHTML = entradas.map(e => {
+        const mis = (notasPorEntrada[e.id] || []).map(n => `
             <div class="tl-nota-item">
                 ${n.texto ? escapeHtml(n.texto) : ''}
-                ${n.doc ? `<div class="tl-nota-doc">
+                ${n.documento_path ? `<a class="tl-nota-doc" data-path="${escapeHtml(n.documento_path)}" href="#">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    ${escapeHtml(n.doc)}
-                </div>` : ''}
+                    Ver documento
+                </a>` : ''}
             </div>
         `).join('');
 
@@ -108,8 +118,8 @@ function pintarBitacora() {
             <div class="tl-card">
                 <div class="tl-fecha">${escapeHtml(fechaLarga(e.fecha))}</div>
                 <div class="tl-actividad">${escapeHtml(e.actividad)}</div>
-                ${e.notasAsesor ? `<div class="tl-notas-asesor"><span class="etq">Notas de tu asesora</span>${escapeHtml(e.notasAsesor)}</div>` : ''}
-                ${notasCliente ? `<div class="tl-cliente-notas">${notasCliente}</div>` : ''}
+                ${e.notas_asesor ? `<div class="tl-notas-asesor"><span class="etq">Notas de tu asesora</span>${escapeHtml(e.notas_asesor)}</div>` : ''}
+                ${mis ? `<div class="tl-cliente-notas">${mis}</div>` : ''}
                 <button class="tl-add-btn" data-entrada="${e.id}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Agregar nota o documento
@@ -123,25 +133,45 @@ function pintarBitacora() {
 const onboardOverlay = document.getElementById('onboardOverlay');
 const onboardForm = document.getElementById('onboardForm');
 
-function revisarOnboarding() {
-    if (!cliente.onboarding) {
+async function revisarOnboarding() {
+    const { data } = await sb.from('onboarding').select('id').eq('cliente_id', cliente.id).limit(1);
+    if (!data || data.length === 0) {
         onboardOverlay.hidden = false;
         document.body.style.overflow = 'hidden';
     }
 }
 
-onboardForm.addEventListener('submit', (e) => {
+onboardForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = onboardForm.querySelector('button[type="submit"]');
     const pdf = document.getElementById('obPdf').files[0];
-    cliente.onboarding = {
+    if (!pdf) { mostrarToast('Sube el PDF de tu cédula.'); return; }
+
+    btn.disabled = true; btn.textContent = 'Guardando...';
+
+    // Subir el PDF al almacenamiento privado
+    const path = `${userId}/cedula-${Date.now()}.pdf`;
+    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, pdf, { upsert: false });
+    if (upErr) {
+        btn.disabled = false; btn.textContent = 'Aceptar y continuar';
+        mostrarToast('Error al subir el PDF. Intenta de nuevo.');
+        return;
+    }
+
+    // Guardar los datos del onboarding / contrato
+    const { error: insErr } = await sb.from('onboarding').insert({
+        cliente_id: cliente.id,
         nombres: document.getElementById('obNombres').value.trim(),
-        cedula: document.getElementById('obCedula').value.trim(),
+        cedula_ruc: document.getElementById('obCedula').value.trim(),
         universidad: document.getElementById('obUniversidad').value.trim(),
-        pdfNombre: pdf ? pdf.name : '',        // solo el nombre por ahora
-        terminosAceptados: true,
-        fechaAceptacion: new Date().toISOString()
-    };
-    persistir();
+        pdf_cedula_path: path,
+        terminos_aceptados: true,
+        fecha_aceptacion: new Date().toISOString()
+    });
+
+    btn.disabled = false; btn.textContent = 'Aceptar y continuar';
+    if (insErr) { mostrarToast('Error al guardar tus datos.'); return; }
+
     onboardOverlay.hidden = true;
     document.body.style.overflow = '';
     mostrarToast('¡Datos registrados! Bienvenido/a.');
@@ -149,7 +179,7 @@ onboardForm.addEventListener('submit', (e) => {
 
 document.getElementById('verTerminos').addEventListener('click', (e) => {
     e.preventDefault();
-    alert('Términos y condiciones (texto pendiente de definir). Aquí irá el contrato de asesoría que proporcionará Anita.');
+    alert('Términos y condiciones (texto pendiente de definir). Aquí irá el contrato de asesoría.');
 });
 
 /* ----------  MODAL NOTA DEL CLIENTE  ---------- */
@@ -166,45 +196,66 @@ function cerrarNota() {
     notaOverlay.hidden = true;
     document.body.style.overflow = '';
 }
-
 document.getElementById('notaClose').addEventListener('click', cerrarNota);
 document.getElementById('notaCancelar').addEventListener('click', cerrarNota);
 notaOverlay.addEventListener('click', (e) => { if (e.target === notaOverlay) cerrarNota(); });
 
-document.getElementById('timeline').addEventListener('click', (e) => {
-    const btn = e.target.closest('.tl-add-btn');
-    if (btn) abrirNota(btn.dataset.entrada);
+document.getElementById('timeline').addEventListener('click', async (e) => {
+    const add = e.target.closest('.tl-add-btn');
+    if (add) { abrirNota(add.dataset.entrada); return; }
+
+    const doc = e.target.closest('.tl-nota-doc');
+    if (doc) {
+        e.preventDefault();
+        const path = doc.dataset.path;
+        const { data, error } = await sb.storage.from(BUCKET).createSignedUrl(path, 60);
+        if (error || !data) { mostrarToast('No se pudo abrir el documento.'); return; }
+        window.open(data.signedUrl, '_blank');
+    }
 });
 
-notaForm.addEventListener('submit', (e) => {
+notaForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = notaForm.querySelector('button[type="submit"]');
     const entradaId = document.getElementById('notaEntradaId').value;
     const texto = document.getElementById('notaTexto').value.trim();
-    const doc = document.getElementById('notaDoc').files[0];
+    const docFile = document.getElementById('notaDoc').files[0];
 
-    if (!texto && !doc) { mostrarToast('Escribe una nota o adjunta un documento.'); return; }
+    if (!texto && !docFile) { mostrarToast('Escribe una nota o adjunta un documento.'); return; }
 
-    const entrada = (cliente.bitacora || []).find(x => x.id === entradaId);
-    if (!entrada) return;
-    if (!entrada.notasCliente) entrada.notasCliente = [];
-    entrada.notasCliente.push({
-        texto: texto,
-        doc: doc ? doc.name : '',   // solo el nombre por ahora
-        fecha: new Date().toISOString()
+    btn.disabled = true; btn.textContent = 'Guardando...';
+
+    let documentoPath = null;
+    if (docFile) {
+        documentoPath = `${userId}/doc-${Date.now()}-${slug(docFile.name)}`;
+        const { error: upErr } = await sb.storage.from(BUCKET).upload(documentoPath, docFile, { upsert: false });
+        if (upErr) {
+            btn.disabled = false; btn.textContent = 'Guardar';
+            mostrarToast('Error al subir el documento.');
+            return;
+        }
+    }
+
+    const { error: insErr } = await sb.from('notas_cliente').insert({
+        bitacora_id: entradaId,
+        cliente_id: cliente.id,
+        texto: texto || null,
+        documento_path: documentoPath
     });
-    persistir();
-    pintarBitacora();
+
+    btn.disabled = false; btn.textContent = 'Guardar';
+    if (insErr) { mostrarToast('Error al guardar la nota.'); return; }
+
+    await pintarBitacora();
     cerrarNota();
     mostrarToast('Nota guardada.');
 });
 
 /* ----------  SALIR  ---------- */
-document.getElementById('btnSalir').addEventListener('click', () => {
-    sessionStorage.removeItem(SESSION_KEY);
+document.getElementById('btnSalir').addEventListener('click', async () => {
+    await sb.auth.signOut();
     window.location.href = 'login.html';
 });
 
 /* ----------  INICIO  ---------- */
-pintarInfo();
-pintarBitacora();
-revisarOnboarding();
+init();

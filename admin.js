@@ -1,29 +1,12 @@
 /* ============================================================
-   PANEL DE ADMINISTRACIÓN — Anita Mishel
+   PANEL DE ADMINISTRACIÓN — Anita Mishel (conectado a Supabase)
    ------------------------------------------------------------
-   ALMACENAMIENTO TEMPORAL: por ahora los clientes se guardan
-   en el navegador (localStorage). Esto es solo para la demo.
-   Cuando conectemos el backend, se reemplazan las funciones
-   cargarClientes() y guardarClientes() por llamadas a la
-   base de datos real. NO usar claves reales todavía.
+   - Login de la administradora con Supabase Auth.
+   - Clientes, bitácora y notas se guardan en Supabase.
+   - Crear cliente: crea su acceso (usuario+clave) y su registro.
+   Nota: cambiar clave o borrar el acceso por completo requiere
+   una pieza extra (se agrega más adelante).
    ============================================================ */
-
-const STORAGE_KEY = 'anita_clientes';
-
-/* ----------  DATOS  ---------- */
-function cargarClientes() {
-    try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-    } catch (e) {
-        return [];
-    }
-}
-
-function guardarClientes(lista) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(lista));
-}
-
-let clientes = cargarClientes();
 
 /* ----------  REFERENCIAS DOM  ---------- */
 const grid        = document.getElementById('clientesGrid');
@@ -36,6 +19,10 @@ const modalTitle  = document.getElementById('modalTitle');
 const form        = document.getElementById('clienteForm');
 const btnEliminar = document.getElementById('btnEliminar');
 const toast       = document.getElementById('toast');
+
+const accesoSection = document.getElementById('accesoSection');
+const accesoRow     = accesoSection.querySelector('.form-row');
+const accesoNota    = document.getElementById('accesoNota');
 
 const campos = {
     id:          document.getElementById('clienteId'),
@@ -57,22 +44,29 @@ const bitFecha      = document.getElementById('bitFecha');
 const bitActividad  = document.getElementById('bitActividad');
 const bitNotas      = document.getElementById('bitNotas');
 
+// Login admin
+const adminLogin      = document.getElementById('adminLogin');
+const adminLoginForm  = document.getElementById('adminLoginForm');
+const adminLoginError = document.getElementById('adminLoginError');
+
+let clientes = [];        // cache en memoria de lo cargado
+let notasPorCliente = {}; // conteo de notas por bitácora (para el editor)
+
 /* ----------  UTILIDADES  ---------- */
 function iniciales(nombre) {
-    return nombre.trim().split(/\s+/).slice(0, 2).map(p => p[0].toUpperCase()).join('');
+    return (nombre || '').trim().split(/\s+/).slice(0, 2).map(p => p[0] ? p[0].toUpperCase() : '').join('');
 }
-
 function generarClave() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     let out = '';
     for (let i = 0; i < 8; i++) out += chars[Math.floor(Math.random() * chars.length)];
     return out;
 }
-
-function nuevoId() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+function escapeHtml(str) {
+    return String(str == null ? '' : str).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    ));
 }
-
 function mostrarToast(msg) {
     toast.textContent = msg;
     toast.hidden = false;
@@ -81,23 +75,96 @@ function mostrarToast(msg) {
     mostrarToast._t = setTimeout(() => {
         toast.classList.remove('show');
         setTimeout(() => { toast.hidden = true; }, 300);
-    }, 2600);
+    }, 2800);
+}
+function fechaCorta(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+// Cliente temporal para crear accesos sin afectar la sesión del admin
+function makeTempClient() {
+    return window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false, storageKey: 'sb-temp-signup' }
+    });
 }
 
-function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, c => (
-        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+/* ============================================================
+   AUTENTICACIÓN DEL ADMIN
+   ============================================================ */
+async function verificarAdmin() {
+    const { data, error } = await sb.rpc('is_admin');
+    if (error) return false;
+    return data === true;
 }
 
-/* ----------  RENDER  ---------- */
+function mostrarLogin() {
+    document.body.classList.add('no-auth');
+    adminLogin.hidden = false;
+}
+
+async function entrarApp() {
+    adminLogin.hidden = true;
+    document.body.classList.remove('no-auth');
+    await cargarClientes();
+}
+
+async function initAuth() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+        if (await verificarAdmin()) { await entrarApp(); return; }
+        await sb.auth.signOut();
+    }
+    mostrarLogin();
+}
+
+adminLoginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    adminLoginError.hidden = true;
+    const email = document.getElementById('adminEmail').value.trim();
+    const pass  = document.getElementById('adminPass').value;
+    const btn = adminLoginForm.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Ingresando...';
+
+    const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if (error) {
+        adminLoginError.textContent = 'Correo o clave incorrectos.';
+        adminLoginError.hidden = false;
+        btn.disabled = false; btn.textContent = 'Ingresar';
+        return;
+    }
+    if (!(await verificarAdmin())) {
+        await sb.auth.signOut();
+        adminLoginError.textContent = 'Esta cuenta no tiene acceso de administración.';
+        adminLoginError.hidden = false;
+        btn.disabled = false; btn.textContent = 'Ingresar';
+        return;
+    }
+    btn.disabled = false; btn.textContent = 'Ingresar';
+    await entrarApp();
+});
+
+document.getElementById('btnSalirAdmin').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    window.location.reload();
+});
+
+/* ============================================================
+   CARGA Y RENDER DE CLIENTES
+   ============================================================ */
+async function cargarClientes() {
+    const { data, error } = await sb.from('clientes').select('*').order('creado', { ascending: false });
+    if (error) { mostrarToast('Error cargando clientes.'); clientes = []; }
+    else clientes = data || [];
+    render(buscador.value);
+}
+
 function render(filtro = '') {
-    const f = filtro.trim().toLowerCase();
+    const f = (filtro || '').trim().toLowerCase();
     const lista = clientes.filter(c =>
         !f ||
-        c.nombre.toLowerCase().includes(f) ||
-        c.universidad.toLowerCase().includes(f) ||
-        c.carrera.toLowerCase().includes(f)
+        (c.nombre || '').toLowerCase().includes(f) ||
+        (c.universidad || '').toLowerCase().includes(f) ||
+        (c.carrera || '').toLowerCase().includes(f)
     );
 
     adminCount.textContent = clientes.length + (clientes.length === 1 ? ' cliente' : ' clientes');
@@ -127,36 +194,39 @@ function render(filtro = '') {
             <div class="avance-block">
                 <div class="avance-top">
                     <span class="avance-label">Elaboración de tesis</span>
-                    <span class="avance-pct">${c.tesis}%</span>
+                    <span class="avance-pct">${c.avance_tesis}%</span>
                 </div>
-                <div class="avance-bar"><div class="avance-fill tesis" style="width:${c.tesis}%"></div></div>
+                <div class="avance-bar"><div class="avance-fill tesis" style="width:${c.avance_tesis}%"></div></div>
             </div>
             <div class="avance-block">
                 <div class="avance-top">
                     <span class="avance-label">Pagos</span>
-                    <span class="avance-pct">${c.pagos}%</span>
+                    <span class="avance-pct">${c.avance_pagos}%</span>
                 </div>
-                <div class="avance-bar"><div class="avance-fill pagos" style="width:${c.pagos}%"></div></div>
+                <div class="avance-bar"><div class="avance-fill pagos" style="width:${c.avance_pagos}%"></div></div>
             </div>
         </div>
     `).join('');
 }
 
-/* ----------  MODAL  ---------- */
+/* ============================================================
+   MODAL CREAR / EDITAR
+   ============================================================ */
 function abrirModal(cliente = null) {
     form.reset();
     if (cliente) {
         modalTitle.textContent = 'Editar cliente';
         campos.id.value          = cliente.id;
         campos.nombre.value      = cliente.nombre;
-        campos.universidad.value = cliente.universidad;
-        campos.carrera.value     = cliente.carrera;
+        campos.universidad.value = cliente.universidad || '';
+        campos.carrera.value     = cliente.carrera || '';
         campos.nivel.value       = cliente.nivel || 'Posgrado';
-        campos.usuario.value     = cliente.usuario;
-        campos.clave.value       = cliente.clave;
-        campos.tesis.value       = cliente.tesis;
-        campos.pagos.value       = cliente.pagos;
+        campos.tesis.value       = cliente.avance_tesis;
+        campos.pagos.value       = cliente.avance_pagos;
         btnEliminar.hidden = false;
+        // En edición no se cambian usuario/clave
+        accesoRow.hidden = true;
+        accesoNota.hidden = false;
         bitacoraAdmin.hidden = false;
         renderBitacora(cliente.id);
     } else {
@@ -165,42 +235,47 @@ function abrirModal(cliente = null) {
         campos.tesis.value = 0;
         campos.pagos.value = 0;
         btnEliminar.hidden = true;
-        bitacoraAdmin.hidden = true;   // la bitácora se habilita al guardar el cliente
+        accesoRow.hidden = false;
+        accesoNota.hidden = true;
+        bitacoraAdmin.hidden = true;
     }
     actualizarValores();
     overlay.hidden = false;
     document.body.style.overflow = 'hidden';
     setTimeout(() => campos.nombre.focus(), 50);
 }
-
 function cerrarModal() {
     overlay.hidden = true;
     document.body.style.overflow = '';
 }
-
 function actualizarValores() {
     valTesis.textContent = campos.tesis.value;
     valPagos.textContent = campos.pagos.value;
 }
 
-/* ----------  BITÁCORA  ---------- */
-function fechaCorta(iso) {
-    const d = new Date(iso + 'T00:00:00');
-    return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
-}
+/* ============================================================
+   BITÁCORA (editor del admin)
+   ============================================================ */
+async function renderBitacora(clienteId) {
+    bitacoraLista.innerHTML = '<p class="bitacora-vacia">Cargando...</p>';
 
-function renderBitacora(clienteId) {
-    const cliente = clientes.find(c => c.id === clienteId);
-    const entradas = (cliente && cliente.bitacora) ? [...cliente.bitacora] : [];
-    entradas.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+    const [{ data: entradas, error: e1 }, { data: notas }] = await Promise.all([
+        sb.from('bitacora').select('*').eq('cliente_id', clienteId).order('fecha', { ascending: true }),
+        sb.from('notas_cliente').select('bitacora_id').eq('cliente_id', clienteId)
+    ]);
 
-    if (entradas.length === 0) {
+    if (e1) { bitacoraLista.innerHTML = '<p class="bitacora-vacia">Error al cargar la bitácora.</p>'; return; }
+
+    const conteo = {};
+    (notas || []).forEach(n => { conteo[n.bitacora_id] = (conteo[n.bitacora_id] || 0) + 1; });
+
+    if (!entradas || entradas.length === 0) {
         bitacoraLista.innerHTML = '<p class="bitacora-vacia">Aún no hay entradas. Agrega la primera arriba.</p>';
         return;
     }
 
     bitacoraLista.innerHTML = entradas.map(e => {
-        const numNotasCli = (e.notasCliente || []).length;
+        const nCli = conteo[e.id] || 0;
         return `
         <div class="bitacora-item">
             <div class="bitacora-item-head">
@@ -208,74 +283,57 @@ function renderBitacora(clienteId) {
                 <button type="button" class="bitacora-item-del" data-del="${e.id}" title="Eliminar entrada">✕</button>
             </div>
             <div class="bitacora-item-act">${escapeHtml(e.actividad)}</div>
-            ${e.notasAsesor ? `<div class="bitacora-item-notas">${escapeHtml(e.notasAsesor)}</div>` : ''}
-            ${numNotasCli ? `<div class="bitacora-item-cli">${numNotasCli} nota(s)/doc. del cliente</div>` : ''}
+            ${e.notas_asesor ? `<div class="bitacora-item-notas">${escapeHtml(e.notas_asesor)}</div>` : ''}
+            ${nCli ? `<div class="bitacora-item-cli">${nCli} nota(s)/doc. del cliente</div>` : ''}
         </div>`;
     }).join('');
 }
 
-document.getElementById('btnAddBitacora').addEventListener('click', () => {
+document.getElementById('btnAddBitacora').addEventListener('click', async () => {
     const id = campos.id.value;
     if (!id) return;
     const fecha = bitFecha.value;
     const actividad = bitActividad.value.trim();
     const notas = bitNotas.value.trim();
-
     if (!fecha) { mostrarToast('Elige una fecha.'); return; }
     if (!actividad) { mostrarToast('Escribe la actividad realizada.'); return; }
 
-    const idx = clientes.findIndex(c => c.id === id);
-    if (idx === -1) return;
-    if (!clientes[idx].bitacora) clientes[idx].bitacora = [];
-    clientes[idx].bitacora.push({
-        id: nuevoId(),
-        fecha: fecha,
-        actividad: actividad,
-        notasAsesor: notas,
-        notasCliente: [],
-        creado: Date.now()
+    const { error } = await sb.from('bitacora').insert({
+        cliente_id: id, fecha, actividad, notas_asesor: notas || null
     });
-    guardarClientes(clientes);
+    if (error) { mostrarToast('Error al guardar la entrada.'); return; }
+
+    bitFecha.value = ''; bitActividad.value = ''; bitNotas.value = '';
     renderBitacora(id);
-    bitFecha.value = '';
-    bitActividad.value = '';
-    bitNotas.value = '';
     mostrarToast('Entrada agregada.');
 });
 
-bitacoraLista.addEventListener('click', (e) => {
+bitacoraLista.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-del]');
     if (!btn) return;
     const id = campos.id.value;
-    const idx = clientes.findIndex(c => c.id === id);
-    if (idx === -1) return;
-    if (confirm('¿Eliminar esta entrada de la bitácora?')) {
-        clientes[idx].bitacora = (clientes[idx].bitacora || []).filter(x => x.id !== btn.dataset.del);
-        guardarClientes(clientes);
-        renderBitacora(id);
-        mostrarToast('Entrada eliminada.');
-    }
+    if (!confirm('¿Eliminar esta entrada de la bitácora?')) return;
+    const { error } = await sb.from('bitacora').delete().eq('id', btn.dataset.del);
+    if (error) { mostrarToast('Error al eliminar.'); return; }
+    renderBitacora(id);
+    mostrarToast('Entrada eliminada.');
 });
 
-/* ----------  EVENTOS  ---------- */
+/* ============================================================
+   EVENTOS GENERALES
+   ============================================================ */
 document.getElementById('btnNuevo').addEventListener('click', () => abrirModal());
 document.getElementById('btnNuevoVacio').addEventListener('click', () => abrirModal());
 document.getElementById('modalClose').addEventListener('click', cerrarModal);
 document.getElementById('btnCancelar').addEventListener('click', cerrarModal);
-
 overlay.addEventListener('click', (e) => { if (e.target === overlay) cerrarModal(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !overlay.hidden) cerrarModal(); });
 
 campos.tesis.addEventListener('input', actualizarValores);
 campos.pagos.addEventListener('input', actualizarValores);
-
-document.getElementById('btnGenerar').addEventListener('click', () => {
-    campos.clave.value = generarClave();
-});
-
+document.getElementById('btnGenerar').addEventListener('click', () => { campos.clave.value = generarClave(); });
 buscador.addEventListener('input', (e) => render(e.target.value));
 
-// Clic en una tarjeta -> editar
 grid.addEventListener('click', (e) => {
     const card = e.target.closest('.cliente-card');
     if (!card) return;
@@ -283,58 +341,93 @@ grid.addEventListener('click', (e) => {
     if (cliente) abrirModal(cliente);
 });
 
-// Guardar (crear o editar)
-form.addEventListener('submit', (e) => {
+/* ----------  GUARDAR (crear o editar)  ---------- */
+form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const datos = {
+    const id = campos.id.value;
+    const submitBtn = form.querySelector('button[type="submit"]');
+
+    const base = {
         nombre:      campos.nombre.value.trim(),
         universidad: campos.universidad.value.trim(),
         carrera:     campos.carrera.value.trim(),
         nivel:       campos.nivel.value,
-        usuario:     campos.usuario.value.trim(),
-        clave:       campos.clave.value.trim(),
-        tesis:       parseInt(campos.tesis.value, 10),
-        pagos:       parseInt(campos.pagos.value, 10),
+        avance_tesis: parseInt(campos.tesis.value, 10),
+        avance_pagos: parseInt(campos.pagos.value, 10),
     };
 
-    const id = campos.id.value;
-
-    // Validar usuario único
-    const usuarioDuplicado = clientes.some(c =>
-        c.usuario.toLowerCase() === datos.usuario.toLowerCase() && c.id !== id
-    );
-    if (usuarioDuplicado) {
-        mostrarToast('Ese usuario ya existe. Elige otro.');
+    if (!base.nombre || !base.universidad || !base.carrera) {
+        mostrarToast('Completa nombre, universidad y carrera.');
         return;
     }
 
+    submitBtn.disabled = true; submitBtn.textContent = 'Guardando...';
+
     if (id) {
-        const idx = clientes.findIndex(c => c.id === id);
-        clientes[idx] = { ...clientes[idx], ...datos };
+        // EDITAR
+        const { error } = await sb.from('clientes').update(base).eq('id', id);
+        submitBtn.disabled = false; submitBtn.textContent = 'Guardar';
+        if (error) { mostrarToast('Error al actualizar.'); return; }
+        await cargarClientes();
+        cerrarModal();
         mostrarToast('Cliente actualizado.');
     } else {
-        clientes.push({ id: nuevoId(), creado: Date.now(), ...datos });
-        mostrarToast('Cliente creado.');
-    }
+        // CREAR
+        const usuario = campos.usuario.value.trim().toLowerCase();
+        const clave   = campos.clave.value.trim();
+        if (!usuario || !clave) {
+            submitBtn.disabled = false; submitBtn.textContent = 'Guardar';
+            mostrarToast('Asigna usuario y clave.'); return;
+        }
+        if (clave.length < 6) {
+            submitBtn.disabled = false; submitBtn.textContent = 'Guardar';
+            mostrarToast('La clave debe tener al menos 6 caracteres.'); return;
+        }
+        if (clientes.some(c => (c.usuario || '').toLowerCase() === usuario)) {
+            submitBtn.disabled = false; submitBtn.textContent = 'Guardar';
+            mostrarToast('Ese usuario ya existe. Elige otro.'); return;
+        }
 
-    guardarClientes(clientes);
-    render(buscador.value);
-    cerrarModal();
+        // 1) Crear el acceso (auth user) con un cliente temporal
+        const temp = makeTempClient();
+        const { data: signUpData, error: signErr } = await temp.auth.signUp({
+            email: usuarioAEmail(usuario),
+            password: clave
+        });
+        if (signErr || !signUpData.user) {
+            submitBtn.disabled = false; submitBtn.textContent = 'Guardar';
+            mostrarToast('No se pudo crear el acceso: ' + (signErr ? signErr.message : 'intenta con otro usuario.'));
+            return;
+        }
+
+        // 2) Crear el registro del cliente (como admin)
+        const { error: insErr } = await sb.from('clientes').insert({
+            user_id: signUpData.user.id,
+            usuario: usuario,
+            ...base
+        });
+        submitBtn.disabled = false; submitBtn.textContent = 'Guardar';
+        if (insErr) { mostrarToast('Se creó el acceso pero falló el registro: ' + insErr.message); return; }
+
+        await cargarClientes();
+        cerrarModal();
+        mostrarToast('Cliente creado. Usuario: ' + usuario);
+    }
 });
 
-// Eliminar
-btnEliminar.addEventListener('click', () => {
+/* ----------  ELIMINAR  ---------- */
+btnEliminar.addEventListener('click', async () => {
     const id = campos.id.value;
     const cliente = clientes.find(c => c.id === id);
     if (!cliente) return;
-    if (confirm(`¿Eliminar a ${cliente.nombre}? Esta acción no se puede deshacer.`)) {
-        clientes = clientes.filter(c => c.id !== id);
-        guardarClientes(clientes);
-        render(buscador.value);
-        cerrarModal();
-        mostrarToast('Cliente eliminado.');
-    }
+    if (!confirm(`¿Eliminar a ${cliente.nombre}? Se borrará su información y su bitácora. Esta acción no se puede deshacer.`)) return;
+
+    const { error } = await sb.from('clientes').delete().eq('id', id);
+    if (error) { mostrarToast('Error al eliminar.'); return; }
+    await cargarClientes();
+    cerrarModal();
+    mostrarToast('Cliente eliminado.');
 });
 
 /* ----------  INICIO  ---------- */
-render();
+initAuth();
