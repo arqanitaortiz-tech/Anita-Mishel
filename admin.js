@@ -259,23 +259,32 @@ function actualizarValores() {
 async function renderBitacora(clienteId) {
     bitacoraLista.innerHTML = '<p class="bitacora-vacia">Cargando...</p>';
 
-    const [{ data: entradas, error: e1 }, { data: notas }] = await Promise.all([
+    const [entradasRes, notasRes] = await Promise.all([
         sb.from('bitacora').select('*').eq('cliente_id', clienteId).order('fecha', { ascending: true }),
-        sb.from('notas_cliente').select('bitacora_id').eq('cliente_id', clienteId)
+        sb.from('notas_cliente').select('id, bitacora_id, texto, documento_path, creado').eq('cliente_id', clienteId).order('creado', { ascending: true })
     ]);
 
-    if (e1) { bitacoraLista.innerHTML = '<p class="bitacora-vacia">Error al cargar la bitácora.</p>'; return; }
+    if (entradasRes.error) { bitacoraLista.innerHTML = '<p class="bitacora-vacia">Error al cargar la bitácora.</p>'; return; }
+    if (notasRes.error) { console.error('Error leyendo notas del cliente:', notasRes.error); }
 
-    const conteo = {};
-    (notas || []).forEach(n => { conteo[n.bitacora_id] = (conteo[n.bitacora_id] || 0) + 1; });
+    const entradas = entradasRes.data || [];
+    const notas = notasRes.data || [];
 
-    if (!entradas || entradas.length === 0) {
+    // Agrupar las notas del cliente por entrada
+    const porEntrada = {};
+    notas.forEach(n => { (porEntrada[n.bitacora_id] = porEntrada[n.bitacora_id] || []).push(n); });
+
+    if (entradas.length === 0) {
         bitacoraLista.innerHTML = '<p class="bitacora-vacia">Aún no hay entradas. Agrega la primera arriba.</p>';
         return;
     }
 
     bitacoraLista.innerHTML = entradas.map(e => {
-        const nCli = conteo[e.id] || 0;
+        const mis = (porEntrada[e.id] || []).map(n => `
+            <div class="bitacora-nota-cli">
+                ${n.texto ? escapeHtml(n.texto) : ''}
+                ${n.documento_path ? `<a href="#" class="bitacora-doc" data-path="${escapeHtml(n.documento_path)}">📎 Ver documento</a>` : ''}
+            </div>`).join('');
         return `
         <div class="bitacora-item">
             <div class="bitacora-item-head">
@@ -284,7 +293,7 @@ async function renderBitacora(clienteId) {
             </div>
             <div class="bitacora-item-act">${escapeHtml(e.actividad)}</div>
             ${e.notas_asesor ? `<div class="bitacora-item-notas">${escapeHtml(e.notas_asesor)}</div>` : ''}
-            ${nCli ? `<div class="bitacora-item-cli">${nCli} nota(s)/doc. del cliente</div>` : ''}
+            ${mis ? `<div class="bitacora-item-cli"><span class="bitacora-cli-etq">Del cliente:</span>${mis}</div>` : ''}
         </div>`;
     }).join('');
 }
@@ -309,6 +318,16 @@ document.getElementById('btnAddBitacora').addEventListener('click', async () => 
 });
 
 bitacoraLista.addEventListener('click', async (e) => {
+    // Abrir documento del cliente
+    const doc = e.target.closest('.bitacora-doc');
+    if (doc) {
+        e.preventDefault();
+        const { data, error } = await sb.storage.from('documentos').createSignedUrl(doc.dataset.path, 60);
+        if (error || !data) { mostrarToast('No se pudo abrir el documento.'); return; }
+        window.open(data.signedUrl, '_blank');
+        return;
+    }
+
     const btn = e.target.closest('[data-del]');
     if (!btn) return;
     const id = campos.id.value;
