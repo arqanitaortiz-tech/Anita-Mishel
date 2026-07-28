@@ -54,6 +54,28 @@
             </div>
 
             <!-- ============================================
+                 CALENDARIO DE CITAS
+            ============================================ -->
+            <div class="cal-panel" id="calPanel">
+                <div class="cal-head">
+                    <h2 class="cal-title">Calendario de citas</h2>
+                    <div class="cal-nav">
+                        <button class="cal-nav-btn" id="calPrev" aria-label="Mes anterior">‹</button>
+                        <span class="cal-mes" id="calMesLabel"></span>
+                        <button class="cal-nav-btn" id="calNext" aria-label="Mes siguiente">›</button>
+                    </div>
+                </div>
+                <div class="cal-legend">
+                    <span><i class="cal-dot dot-pend"></i> Pendiente</span>
+                    <span><i class="cal-dot dot-conf"></i> Confirmada</span>
+                    <span><i class="cal-dot dot-block"></i> Bloqueado</span>
+                    <button class="btn-mini" id="btnBloquear">+ Bloquear día/horas</button>
+                </div>
+                <div class="cal-grid" id="calGrid"></div>
+                <div class="cal-detalle" id="calDetalle"></div>
+            </div>
+
+            <!-- ============================================
                  BUSCADOR
             ============================================ -->
             <div class="admin-search">
@@ -228,6 +250,54 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ============================================
+         MODAL: BLOQUEAR DISPONIBILIDAD
+    ============================================ -->
+    <div class="modal-overlay" id="bloqueoOverlay" hidden>
+        <div class="modal">
+            <div class="modal-head">
+                <h2>Bloquear disponibilidad</h2>
+                <button class="modal-close" id="bloqueoClose" aria-label="Cerrar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <form id="bloqueoForm" class="modal-body">
+                <p class="onboard-intro">Marca días u horas en los que no atenderás (feriados, ocupaciones). Los clientes no podrán solicitar cita en esos momentos.</p>
+                <div class="form-group">
+                    <label for="bloqueoFecha">Fecha</label>
+                    <input type="date" id="bloqueoFecha" required>
+                </div>
+                <label class="bloqueo-check">
+                    <input type="checkbox" id="bloqueoTodoDia" checked>
+                    <span>Bloquear todo el día</span>
+                </label>
+                <div class="form-row" id="bloqueoHorasRow" hidden>
+                    <div class="form-group">
+                        <label for="bloqueoInicio">Desde</label>
+                        <input type="time" id="bloqueoInicio">
+                    </div>
+                    <div class="form-group">
+                        <label for="bloqueoFin">Hasta</label>
+                        <input type="time" id="bloqueoFin">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="bloqueoMotivo">Motivo (opcional)</label>
+                    <input type="text" id="bloqueoMotivo" placeholder="Ej. Feriado, ocupación personal">
+                </div>
+                <div class="modal-actions">
+                    <div class="modal-actions-right">
+                        <button type="button" class="btn btn-ghost" id="bloqueoCancelar">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Bloquear</button>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
 

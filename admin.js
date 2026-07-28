@@ -116,6 +116,7 @@ async function entrarApp() {
     document.body.classList.remove('no-auth');
     await cargarClientes();
     await cargarCitasPendientes();
+    await cargarCalendario();
 }
 
 async function initAuth() {
@@ -542,6 +543,7 @@ document.getElementById('btnConfirmarCita').addEventListener('click', async () =
     if (error) { mostrarToast('Error al confirmar la cita.'); return; }
     cerrarGestion();
     await cargarCitasPendientes();
+    await cargarCalendario();
     mostrarToast('Cita confirmada.');
 });
 
@@ -555,7 +557,180 @@ document.getElementById('btnRechazarCita').addEventListener('click', async () =>
     if (error) { mostrarToast('Error al rechazar.'); return; }
     cerrarGestion();
     await cargarCitasPendientes();
+    await cargarCalendario();
     mostrarToast('Solicitud rechazada.');
+});
+
+/* ============================================================
+   CALENDARIO Y BLOQUEOS
+   ============================================================ */
+const calGrid      = document.getElementById('calGrid');
+const calMesLabel  = document.getElementById('calMesLabel');
+const calDetalle   = document.getElementById('calDetalle');
+const bloqueoOverlay = document.getElementById('bloqueoOverlay');
+const bloqueoForm    = document.getElementById('bloqueoForm');
+const bloqueoTodoDia = document.getElementById('bloqueoTodoDia');
+const bloqueoHorasRow= document.getElementById('bloqueoHorasRow');
+
+const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DIAS_SEM = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+let calMes = new Date(); calMes.setDate(1);
+let citasTodas = [];
+let bloqueosTodos = [];
+let diaSel = null;
+
+function pad2(n){ return String(n).padStart(2,'0'); }
+function fechaAStr(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+function isoADia(iso){ return fechaAStr(new Date(iso)); }
+function isoAHora(iso){ return new Date(iso).toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' }); }
+function citaISO(c){ return (c.estado === 'confirmada' && c.fecha_confirmada) ? c.fecha_confirmada : c.fecha_propuesta; }
+
+async function cargarCalendario(){
+    const [citasRes, bloqRes] = await Promise.all([
+        sb.from('citas').select('*, clientes(nombre)').in('estado', ['pendiente','confirmada']),
+        sb.from('bloqueos').select('*')
+    ]);
+    citasTodas = citasRes.data || [];
+    bloqueosTodos = bloqRes.data || [];
+    renderCalendario();
+}
+
+function renderCalendario(){
+    calMesLabel.textContent = MESES[calMes.getMonth()] + ' ' + calMes.getFullYear();
+
+    const porDia = {};
+    citasTodas.forEach(c => {
+        const dia = isoADia(citaISO(c));
+        porDia[dia] = porDia[dia] || { pend:0, conf:0 };
+        if (c.estado === 'confirmada') porDia[dia].conf++; else porDia[dia].pend++;
+    });
+    const bloqDias = {};
+    bloqueosTodos.forEach(b => { (bloqDias[b.fecha] = bloqDias[b.fecha] || []).push(b); });
+
+    const year = calMes.getFullYear(), month = calMes.getMonth();
+    let offset = new Date(year, month, 1).getDay() - 1; if (offset < 0) offset = 6;
+    const diasEnMes = new Date(year, month+1, 0).getDate();
+    const hoyStr = fechaAStr(new Date());
+
+    let html = DIAS_SEM.map(d => `<div class="cal-wd">${d}</div>`).join('');
+    for (let i=0;i<offset;i++) html += `<div class="cal-day vacio"></div>`;
+    for (let dia=1; dia<=diasEnMes; dia++){
+        const ds = year+'-'+pad2(month+1)+'-'+pad2(dia);
+        const info = porDia[ds];
+        const bloqDiaCompleto = bloqDias[ds] && bloqDias[ds].some(b => b.todo_el_dia);
+        const clases = ['cal-day'];
+        if (ds === hoyStr) clases.push('hoy');
+        if (ds === diaSel) clases.push('sel');
+        if (bloqDiaCompleto) clases.push('bloqueado');
+        let dots = '';
+        if (info){
+            if (info.pend) dots += `<i style="background:var(--color-terracotta)"></i>`;
+            if (info.conf) dots += `<i style="background:var(--color-olive)"></i>`;
+        }
+        if (bloqDias[ds] && !bloqDiaCompleto) dots += `<i style="background:#B0B0B0"></i>`;
+        html += `<div class="${clases.join(' ')}" data-dia="${ds}"><span>${dia}</span><span class="cal-day-dots">${dots}</span></div>`;
+    }
+    calGrid.innerHTML = html;
+
+    if (diaSel) renderDetalle(diaSel);
+    else calDetalle.innerHTML = '<p class="cal-det-vacio">Haz clic en un día para ver o gestionar sus citas.</p>';
+}
+
+function renderDetalle(ds){
+    const citasDia = citasTodas.filter(c => isoADia(citaISO(c)) === ds)
+        .sort((a,b) => citaISO(a) < citaISO(b) ? -1 : 1);
+    const bloqDia = bloqueosTodos.filter(b => b.fecha === ds);
+
+    const legible = new Date(ds+'T00:00:00').toLocaleDateString('es-EC', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    let html = `<div class="cal-detalle-titulo">${escapeHtml(legible)}</div>`;
+
+    bloqDia.forEach(b => {
+        const rango = b.todo_el_dia ? 'Todo el día'
+            : `${b.hora_inicio ? b.hora_inicio.slice(0,5):''} – ${b.hora_fin ? b.hora_fin.slice(0,5):''}`;
+        html += `<div class="cal-det-bloqueo">
+            <span>🚫 Bloqueado: ${escapeHtml(rango)}${b.motivo ? ' · '+escapeHtml(b.motivo) : ''}</span>
+            <button class="del" data-delbloqueo="${b.id}">Quitar</button>
+        </div>`;
+    });
+
+    if (citasDia.length === 0 && bloqDia.length === 0)
+        html += `<p class="cal-det-vacio">No hay citas ni bloqueos este día.</p>`;
+
+    citasDia.forEach(c => {
+        const cli = c.clientes || {};
+        html += `<div class="cal-det-item">
+            <div><span class="hora">${escapeHtml(isoAHora(citaISO(c)))}</span> · ${escapeHtml(cli.nombre||'Cliente')} — ${escapeHtml(c.tema)}</div>
+            <span class="estado-min ${c.estado}">${c.estado === 'confirmada' ? 'Confirmada' : 'Pendiente'}</span>
+        </div>`;
+    });
+
+    html += `<button class="btn-mini cal-det-block-btn" data-bloquear-dia="${ds}">+ Bloquear este día/horas</button>`;
+    calDetalle.innerHTML = html;
+}
+
+calGrid.addEventListener('click', (e) => {
+    const cell = e.target.closest('.cal-day');
+    if (!cell || cell.classList.contains('vacio')) return;
+    diaSel = cell.dataset.dia;
+    renderCalendario();
+});
+document.getElementById('calPrev').addEventListener('click', () => { calMes.setMonth(calMes.getMonth()-1); renderCalendario(); });
+document.getElementById('calNext').addEventListener('click', () => { calMes.setMonth(calMes.getMonth()+1); renderCalendario(); });
+
+function abrirBloqueo(fecha){
+    bloqueoForm.reset();
+    bloqueoTodoDia.checked = true;
+    bloqueoHorasRow.hidden = true;
+    if (fecha) document.getElementById('bloqueoFecha').value = fecha;
+    bloqueoOverlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+}
+function cerrarBloqueo(){ bloqueoOverlay.hidden = true; document.body.style.overflow = ''; }
+
+document.getElementById('btnBloquear').addEventListener('click', () => abrirBloqueo(diaSel));
+document.getElementById('bloqueoClose').addEventListener('click', cerrarBloqueo);
+document.getElementById('bloqueoCancelar').addEventListener('click', cerrarBloqueo);
+bloqueoOverlay.addEventListener('click', (e) => { if (e.target === bloqueoOverlay) cerrarBloqueo(); });
+bloqueoTodoDia.addEventListener('change', () => { bloqueoHorasRow.hidden = bloqueoTodoDia.checked; });
+
+calDetalle.addEventListener('click', async (e) => {
+    const bloquear = e.target.closest('[data-bloquear-dia]');
+    if (bloquear){ abrirBloqueo(bloquear.dataset.bloquearDia); return; }
+    const del = e.target.closest('[data-delbloqueo]');
+    if (del){
+        if (!confirm('¿Quitar este bloqueo?')) return;
+        const { error } = await sb.from('bloqueos').delete().eq('id', del.dataset.delbloqueo);
+        if (error){ mostrarToast('Error al quitar el bloqueo.'); return; }
+        await cargarCalendario();
+        mostrarToast('Bloqueo quitado.');
+    }
+});
+
+bloqueoForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fecha = document.getElementById('bloqueoFecha').value;
+    const todoDia = bloqueoTodoDia.checked;
+    const inicio = document.getElementById('bloqueoInicio').value;
+    const fin = document.getElementById('bloqueoFin').value;
+    const motivo = document.getElementById('bloqueoMotivo').value.trim();
+    if (!fecha){ mostrarToast('Elige una fecha.'); return; }
+    if (!todoDia){
+        if (!inicio || !fin){ mostrarToast('Indica hora desde y hasta.'); return; }
+        if (inicio >= fin){ mostrarToast('La hora "desde" debe ser antes de "hasta".'); return; }
+    }
+    const { error } = await sb.from('bloqueos').insert({
+        fecha,
+        todo_el_dia: todoDia,
+        hora_inicio: todoDia ? null : inicio,
+        hora_fin: todoDia ? null : fin,
+        motivo: motivo || null
+    });
+    if (error){ mostrarToast('Error al bloquear.'); return; }
+    cerrarBloqueo();
+    diaSel = fecha;
+    await cargarCalendario();
+    mostrarToast('Bloqueo agregado.');
 });
 
 /* ----------  INICIO  ---------- */

@@ -195,6 +195,24 @@ citaForm.addEventListener('submit', async (e) => {
     const fechaISO = new Date(fechaVal).toISOString();
     if (new Date(fechaISO) < new Date()) { mostrarToast('Elige una fecha futura.'); return; }
 
+    // Validar contra los días/horas bloqueados por la asesora
+    const elegido = new Date(fechaVal);
+    const diaStr = elegido.getFullYear() + '-' +
+        String(elegido.getMonth() + 1).padStart(2, '0') + '-' +
+        String(elegido.getDate()).padStart(2, '0');
+    const horaStr = String(elegido.getHours()).padStart(2, '0') + ':' + String(elegido.getMinutes()).padStart(2, '0');
+
+    const { data: bloqs } = await sb.from('bloqueos').select('*').eq('fecha', diaStr);
+    if (bloqs && bloqs.length) {
+        const diaCompleto = bloqs.some(b => b.todo_el_dia);
+        const enRango = bloqs.some(b => !b.todo_el_dia && b.hora_inicio && b.hora_fin &&
+            horaStr >= b.hora_inicio.slice(0, 5) && horaStr < b.hora_fin.slice(0, 5));
+        if (diaCompleto || enRango) {
+            mostrarToast('Ese día u horario no está disponible. Por favor elige otro.');
+            return;
+        }
+    }
+
     btn.disabled = true; btn.textContent = 'Enviando...';
     const { error } = await sb.from('citas').insert({
         cliente_id: cliente.id,
