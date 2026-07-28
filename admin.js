@@ -49,6 +49,15 @@ const adminLogin      = document.getElementById('adminLogin');
 const adminLoginForm  = document.getElementById('adminLoginForm');
 const adminLoginError = document.getElementById('adminLoginError');
 
+const citasAdmin      = document.getElementById('citasAdmin');
+const citasAdminLista = document.getElementById('citasAdminLista');
+const citasCount      = document.getElementById('citasCount');
+const gestionOverlay  = document.getElementById('gestionCitaOverlay');
+const gestionInfo     = document.getElementById('gestionCitaInfo');
+const gestionFecha    = document.getElementById('gestionCitaFecha');
+const gestionNota     = document.getElementById('gestionCitaNota');
+const gestionId       = document.getElementById('gestionCitaId');
+
 let clientes = [];        // cache en memoria de lo cargado
 let notasPorCliente = {}; // conteo de notas por bitácora (para el editor)
 
@@ -106,6 +115,7 @@ async function entrarApp() {
     adminLogin.hidden = true;
     document.body.classList.remove('no-auth');
     await cargarClientes();
+    await cargarCitasPendientes();
 }
 
 async function initAuth() {
@@ -446,6 +456,106 @@ btnEliminar.addEventListener('click', async () => {
     await cargarClientes();
     cerrarModal();
     mostrarToast('Cliente eliminado.');
+});
+
+/* ============================================================
+   SOLICITUDES DE CITA
+   ============================================================ */
+let citasCache = [];
+
+function fechaHoraCorta(iso) {
+    return new Date(iso).toLocaleString('es-EC', {
+        day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+}
+function isoToLocalInput(iso) {
+    const d = new Date(iso);
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+}
+
+async function cargarCitasPendientes() {
+    const { data, error } = await sb.from('citas')
+        .select('*, clientes(nombre, universidad, carrera)')
+        .eq('estado', 'pendiente')
+        .order('fecha_propuesta', { ascending: true });
+
+    if (error) { console.error('Error citas:', error); citasAdmin.hidden = true; return; }
+
+    citasCache = data || [];
+    if (citasCache.length === 0) { citasAdmin.hidden = true; return; }
+
+    citasAdmin.hidden = false;
+    citasCount.textContent = citasCache.length;
+    citasAdminLista.innerHTML = citasCache.map(c => {
+        const cli = c.clientes || {};
+        return `
+        <div class="cita-admin-item" data-id="${c.id}">
+            <div>
+                <div class="cita-admin-cliente">${escapeHtml(cli.nombre || 'Cliente')}</div>
+                <div class="cita-admin-meta">${escapeHtml([cli.universidad, cli.carrera].filter(Boolean).join(' · '))}</div>
+                <div class="cita-admin-tema">${escapeHtml(c.tema)}</div>
+            </div>
+            <div class="cita-admin-fecha">${escapeHtml(fechaHoraCorta(c.fecha_propuesta))}</div>
+        </div>`;
+    }).join('');
+}
+
+function abrirGestion(cita) {
+    const cli = cita.clientes || {};
+    gestionId.value = cita.id;
+    gestionInfo.innerHTML =
+        `<strong>${escapeHtml(cli.nombre || 'Cliente')}</strong>` +
+        `<div class="linea">Fecha propuesta: ${escapeHtml(fechaHoraCorta(cita.fecha_propuesta))}</div>` +
+        `<div class="linea">Tema: ${escapeHtml(cita.tema)}</div>`;
+    gestionFecha.value = isoToLocalInput(cita.fecha_propuesta);
+    gestionNota.value = '';
+    gestionOverlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+}
+function cerrarGestion() {
+    gestionOverlay.hidden = true;
+    document.body.style.overflow = '';
+}
+
+citasAdminLista.addEventListener('click', (e) => {
+    const item = e.target.closest('.cita-admin-item');
+    if (!item) return;
+    const cita = citasCache.find(c => c.id === item.dataset.id);
+    if (cita) abrirGestion(cita);
+});
+
+document.getElementById('gestionCitaClose').addEventListener('click', cerrarGestion);
+document.getElementById('btnCerrarGestion').addEventListener('click', cerrarGestion);
+gestionOverlay.addEventListener('click', (e) => { if (e.target === gestionOverlay) cerrarGestion(); });
+
+document.getElementById('btnConfirmarCita').addEventListener('click', async () => {
+    const id = gestionId.value;
+    const fechaVal = gestionFecha.value;
+    if (!fechaVal) { mostrarToast('Elige la fecha y hora confirmada.'); return; }
+    const fechaISO = new Date(fechaVal).toISOString();
+    const { error } = await sb.from('citas').update({
+        estado: 'confirmada',
+        fecha_confirmada: fechaISO,
+        nota_admin: gestionNota.value.trim() || null
+    }).eq('id', id);
+    if (error) { mostrarToast('Error al confirmar la cita.'); return; }
+    cerrarGestion();
+    await cargarCitasPendientes();
+    mostrarToast('Cita confirmada.');
+});
+
+document.getElementById('btnRechazarCita').addEventListener('click', async () => {
+    const id = gestionId.value;
+    if (!confirm('¿Rechazar esta solicitud de cita?')) return;
+    const { error } = await sb.from('citas').update({
+        estado: 'rechazada',
+        nota_admin: gestionNota.value.trim() || null
+    }).eq('id', id);
+    if (error) { mostrarToast('Error al rechazar.'); return; }
+    cerrarGestion();
+    await cargarCitasPendientes();
+    mostrarToast('Solicitud rechazada.');
 });
 
 /* ----------  INICIO  ---------- */

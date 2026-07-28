@@ -374,6 +374,88 @@ input, select, button, textarea { font-family: inherit; }
 }
 
 /* ============================================
+   CITAS (CLIENTE)
+============================================ */
+.cli-citas { margin-bottom: 44px; }
+.cli-citas-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.cli-citas-head .cli-section-title { margin-bottom: 0; }
+
+.citas-lista { display: flex; flex-direction: column; gap: 12px; }
+.cita-item {
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+.cita-info { flex: 1; }
+.cita-fecha {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-navy);
+    margin-bottom: 4px;
+}
+.cita-tema { font-size: 0.92rem; color: var(--color-text-light); line-height: 1.5; }
+.cita-nota {
+    font-size: 0.85rem;
+    color: var(--color-text);
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--color-border);
+}
+.cita-nota .etq {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--color-text-muted);
+    margin-bottom: 2px;
+}
+.cita-lado { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+.cita-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    padding: 4px 12px;
+    border-radius: 50px;
+    white-space: nowrap;
+}
+.cita-badge.pendiente { background: rgba(193,122,95,0.14); color: #9C5A42; }
+.cita-badge.confirmada { background: rgba(107,123,94,0.16); color: var(--color-olive-dark); }
+.cita-badge.rechazada { background: rgba(0,0,0,0.06); color: var(--color-text-muted); }
+.cita-cancelar {
+    background: none;
+    border: none;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 0;
+}
+.cita-cancelar:hover { color: var(--color-terracotta); }
+
+.citas-empty {
+    background: var(--color-white);
+    border: 1px dashed var(--color-border);
+    border-radius: 14px;
+    padding: 32px 24px;
+    text-align: center;
+    color: var(--color-text-light);
+}
+
+/* ============================================
    MODAL (compartido con onboarding y notas)
 ============================================ */
 .modal-overlay {

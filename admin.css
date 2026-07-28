@@ -628,6 +628,71 @@ input, select, button { font-family: inherit; }
 }
 
 /* ============================================
+   SOLICITUDES DE CITA (ADMIN)
+============================================ */
+.citas-admin {
+    background: rgba(193,122,95,0.06);
+    border: 1px solid rgba(193,122,95,0.25);
+    border-radius: 16px;
+    padding: 22px 24px;
+    margin-bottom: 28px;
+}
+.citas-admin-title {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-navy);
+    margin-bottom: 16px;
+}
+.citas-admin-count {
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--color-white);
+    background: var(--color-terracotta);
+    padding: 2px 10px;
+    border-radius: 50px;
+    vertical-align: middle;
+    margin-left: 6px;
+}
+.citas-admin-lista { display: flex; flex-direction: column; gap: 12px; }
+.cita-admin-item {
+    background: var(--color-white);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: var(--transition);
+}
+.cita-admin-item:hover { box-shadow: var(--shadow-soft); border-color: var(--color-terracotta); }
+.cita-admin-cliente { font-size: 1rem; font-weight: 600; color: var(--color-navy); }
+.cita-admin-meta { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 2px; }
+.cita-admin-tema { font-size: 0.9rem; color: var(--color-text-light); margin-top: 6px; }
+.cita-admin-fecha {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-terracotta);
+    text-align: right;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.gestion-cita-info {
+    background: var(--color-cream);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 18px;
+    font-size: 0.92rem;
+    color: var(--color-text);
+}
+.gestion-cita-info strong { color: var(--color-navy); }
+.gestion-cita-info .linea { margin-top: 4px; color: var(--color-text-light); }
+
+/* ============================================
    LOGIN DEL ADMIN
 ============================================ */
 .admin-login {

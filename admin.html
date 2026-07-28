@@ -46,6 +46,14 @@
             </div>
 
             <!-- ============================================
+                 SOLICITUDES DE CITA (se llena con JS)
+            ============================================ -->
+            <div class="citas-admin" id="citasAdmin" hidden>
+                <h2 class="citas-admin-title">Solicitudes de cita <span class="citas-admin-count" id="citasCount"></span></h2>
+                <div class="citas-admin-lista" id="citasAdminLista"></div>
+            </div>
+
+            <!-- ============================================
                  BUSCADOR
             ============================================ -->
             <div class="admin-search">
@@ -182,6 +190,44 @@
                     </div>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ============================================
+         MODAL: GESTIONAR SOLICITUD DE CITA
+    ============================================ -->
+    <div class="modal-overlay" id="gestionCitaOverlay" hidden>
+        <div class="modal">
+            <div class="modal-head">
+                <h2>Gestionar solicitud de cita</h2>
+                <button class="modal-close" id="gestionCitaClose" aria-label="Cerrar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="gestionCitaId">
+                <div class="gestion-cita-info" id="gestionCitaInfo"></div>
+
+                <div class="form-group">
+                    <label for="gestionCitaFecha">Fecha y hora confirmada</label>
+                    <input type="datetime-local" id="gestionCitaFecha">
+                </div>
+                <div class="form-group">
+                    <label for="gestionCitaNota">Nota para el cliente (opcional)</label>
+                    <textarea id="gestionCitaNota" rows="2" placeholder="Ej. Confirmada por videollamada. Te envío el enlace."></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-danger-ghost" id="btnRechazarCita">Rechazar solicitud</button>
+                    <div class="modal-actions-right">
+                        <button type="button" class="btn btn-ghost" id="btnCerrarGestion">Cerrar</button>
+                        <button type="button" class="btn btn-primary" id="btnConfirmarCita">Confirmar cita</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

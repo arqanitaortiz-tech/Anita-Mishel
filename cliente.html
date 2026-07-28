@@ -54,6 +54,20 @@
             </div>
 
             <!-- ============================================
+                 CITAS
+            ============================================ -->
+            <div class="cli-citas">
+                <div class="cli-citas-head">
+                    <h2 class="cli-section-title">Mis citas</h2>
+                    <button class="btn btn-primary" id="btnSolicitarCita">Solicitar cita</button>
+                </div>
+                <div class="citas-lista" id="citasLista"></div>
+                <div class="citas-empty" id="citasEmpty" hidden>
+                    <p>No tienes citas todavía. Solicita una cuando quieras revisar tu proyecto con tu asesora.</p>
+                </div>
+            </div>
+
+            <!-- ============================================
                  BITÁCORA
             ============================================ -->
             <div class="cli-bitacora">
@@ -144,6 +158,40 @@
                     <div class="modal-actions-right">
                         <button type="button" class="btn btn-ghost" id="notaCancelar">Cancelar</button>
                         <button type="submit" class="btn btn-primary">Guardar</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ============================================
+         MODAL: SOLICITAR CITA
+    ============================================ -->
+    <div class="modal-overlay" id="citaOverlay" hidden>
+        <div class="modal">
+            <div class="modal-head">
+                <h2>Solicitar cita</h2>
+                <button class="modal-close" id="citaClose" aria-label="Cerrar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <form id="citaForm" class="modal-body">
+                <p class="onboard-intro">Propón una fecha y hora; tu asesora la confirmará o te sugerirá otra.</p>
+                <div class="form-group">
+                    <label for="citaFecha">Fecha y hora tentativa</label>
+                    <input type="datetime-local" id="citaFecha" required>
+                </div>
+                <div class="form-group">
+                    <label for="citaTema">¿Qué quieres discutir?</label>
+                    <textarea id="citaTema" rows="3" required placeholder="Ej. Revisar el avance del capítulo 3 y dudas de metodología"></textarea>
+                </div>
+                <div class="modal-actions">
+                    <div class="modal-actions-right">
+                        <button type="button" class="btn btn-ghost" id="citaCancelar">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Enviar solicitud</button>
                     </div>
                 </div>
             </form>

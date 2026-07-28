@@ -57,6 +57,7 @@ async function init() {
 
     cliente = data[0];
     pintarInfo();
+    await pintarCitas();
     await pintarBitacora();
     await revisarOnboarding();
 }
@@ -128,6 +129,96 @@ async function pintarBitacora() {
         </div>`;
     }).join('');
 }
+
+/* ----------  CITAS  ---------- */
+function fechaHora(iso) {
+    return new Date(iso).toLocaleString('es-EC', {
+        weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+    });
+}
+
+async function pintarCitas() {
+    const lista = document.getElementById('citasLista');
+    const empty = document.getElementById('citasEmpty');
+
+    const { data, error } = await sb.from('citas')
+        .select('*').eq('cliente_id', cliente.id).order('creado', { ascending: false });
+
+    if (error) { lista.innerHTML = ''; empty.hidden = false; return; }
+
+    const citas = data || [];
+    if (citas.length === 0) { lista.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+
+    const etiqueta = { pendiente: 'Pendiente', confirmada: 'Confirmada', rechazada: 'No disponible' };
+
+    lista.innerHTML = citas.map(c => {
+        const fechaMostrar = c.estado === 'confirmada' && c.fecha_confirmada ? c.fecha_confirmada : c.fecha_propuesta;
+        const cancelar = c.estado === 'pendiente'
+            ? `<button class="cita-cancelar" data-cancelar="${c.id}">Cancelar</button>` : '';
+        return `
+        <div class="cita-item">
+            <div class="cita-info">
+                <div class="cita-fecha">${escapeHtml(fechaHora(fechaMostrar))}</div>
+                <div class="cita-tema">${escapeHtml(c.tema)}</div>
+                ${c.nota_admin ? `<div class="cita-nota"><span class="etq">Nota de tu asesora</span>${escapeHtml(c.nota_admin)}</div>` : ''}
+            </div>
+            <div class="cita-lado">
+                <span class="cita-badge ${c.estado}">${etiqueta[c.estado] || c.estado}</span>
+                ${cancelar}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+const citaOverlay = document.getElementById('citaOverlay');
+const citaForm = document.getElementById('citaForm');
+
+document.getElementById('btnSolicitarCita').addEventListener('click', () => {
+    citaForm.reset();
+    citaOverlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+});
+function cerrarCita() { citaOverlay.hidden = true; document.body.style.overflow = ''; }
+document.getElementById('citaClose').addEventListener('click', cerrarCita);
+document.getElementById('citaCancelar').addEventListener('click', cerrarCita);
+citaOverlay.addEventListener('click', (e) => { if (e.target === citaOverlay) cerrarCita(); });
+
+citaForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = citaForm.querySelector('button[type="submit"]');
+    const fechaVal = document.getElementById('citaFecha').value;
+    const tema = document.getElementById('citaTema').value.trim();
+    if (!fechaVal || !tema) return;
+
+    const fechaISO = new Date(fechaVal).toISOString();
+    if (new Date(fechaISO) < new Date()) { mostrarToast('Elige una fecha futura.'); return; }
+
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    const { error } = await sb.from('citas').insert({
+        cliente_id: cliente.id,
+        fecha_propuesta: fechaISO,
+        tema: tema,
+        estado: 'pendiente'
+    });
+    btn.disabled = false; btn.textContent = 'Enviar solicitud';
+    if (error) { mostrarToast('Error al enviar la solicitud.'); return; }
+
+    await pintarCitas();
+    cerrarCita();
+    mostrarToast('Solicitud enviada. Tu asesora la confirmará.');
+});
+
+document.getElementById('citasLista').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-cancelar]');
+    if (!btn) return;
+    if (!confirm('¿Cancelar esta solicitud de cita?')) return;
+    const { error } = await sb.from('citas').delete().eq('id', btn.dataset.cancelar);
+    if (error) { mostrarToast('Error al cancelar.'); return; }
+    await pintarCitas();
+    mostrarToast('Solicitud cancelada.');
+});
 
 /* ----------  ONBOARDING (PRIMER INGRESO)  ---------- */
 const onboardOverlay = document.getElementById('onboardOverlay');
