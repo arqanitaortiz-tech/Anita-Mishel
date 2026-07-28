@@ -617,19 +617,25 @@ function renderCalendario(){
     for (let i=0;i<offset;i++) html += `<div class="cal-day vacio"></div>`;
     for (let dia=1; dia<=diasEnMes; dia++){
         const ds = year+'-'+pad2(month+1)+'-'+pad2(dia);
-        const info = porDia[ds];
-        const bloqDiaCompleto = bloqDias[ds] && bloqDias[ds].some(b => b.todo_el_dia);
+        const info = porDia[ds] || { pend:0, conf:0 };
+        const bloqArr = bloqDias[ds] || [];
+        const bloqDiaCompleto = bloqArr.some(b => b.todo_el_dia);
+        const bloqParcial = bloqArr.some(b => !b.todo_el_dia);
+
         const clases = ['cal-day'];
         if (ds === hoyStr) clases.push('hoy');
         if (ds === diaSel) clases.push('sel');
         if (bloqDiaCompleto) clases.push('bloqueado');
-        let dots = '';
-        if (info){
-            if (info.pend) dots += `<i style="background:var(--color-terracotta)"></i>`;
-            if (info.conf) dots += `<i style="background:var(--color-olive)"></i>`;
+        else if (info.conf) clases.push('dia-conf');
+        else if (info.pend) clases.push('dia-pend');
+
+        // Marca en la esquina para un estado secundario
+        let mark = '';
+        if (!bloqDiaCompleto){
+            if (info.conf && info.pend) mark = `<span class="cal-day-mark" style="background:var(--color-terracotta)"></span>`;
+            else if (bloqParcial) mark = `<span class="cal-day-mark" style="background:#9E9E9E"></span>`;
         }
-        if (bloqDias[ds] && !bloqDiaCompleto) dots += `<i style="background:#B0B0B0"></i>`;
-        html += `<div class="${clases.join(' ')}" data-dia="${ds}"><span>${dia}</span><span class="cal-day-dots">${dots}</span></div>`;
+        html += `<div class="${clases.join(' ')}" data-dia="${ds}"><span>${dia}</span>${mark}</div>`;
     }
     calGrid.innerHTML = html;
 
