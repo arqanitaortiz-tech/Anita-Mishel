@@ -2,7 +2,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSb } from '@/lib/supabase';
+import { clausulas, numeroContrato } from '@/lib/contrato';
 import { Marca, Modal, useToast, Avance, Badge, Cargando } from '@/components/Ui';
+import FirmaPad from '@/components/FirmaPad';
 
 const BUCKET = 'documentos';
 
@@ -16,7 +18,11 @@ function fechaHora(iso) {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }
+function fCorta(iso) {
+  return new Date(iso + 'T00:00:00').toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
+}
 const slug = (n) => (n || 'archivo').toLowerCase().replace(/[^a-z0-9.\-]+/g, '-').replace(/^-+|-+$/g, '');
+const usd = (n) => 'USD $' + Number(n || 0).toFixed(2);
 
 export default function Portal() {
   const router = useRouter();
@@ -27,21 +33,28 @@ export default function Portal() {
   const [citas, setCitas] = useState([]);
   const [entradas, setEntradas] = useState([]);
   const [notas, setNotas] = useState([]);
-  const [modalOnboard, setModalOnboard] = useState(false);
+  const [abonos, setAbonos] = useState([]);
+  const [contrato, setContrato] = useState(null);
+  const [necesitaOnboarding, setNecesitaOnboarding] = useState(false);
   const [modalCita, setModalCita] = useState(false);
-  const [modalNota, setModalNota] = useState(null); // id de entrada
+  const [modalNota, setModalNota] = useState(null);
   const [guardando, setGuardando] = useState(false);
 
   const cargar = useCallback(async (cid) => {
     const sb = getSb();
-    const [c, b, n] = await Promise.all([
+    const [c, b, n, a, co] = await Promise.all([
       sb.from('citas').select('*').eq('cliente_id', cid).order('creado', { ascending: false }),
       sb.from('bitacora').select('*').eq('cliente_id', cid).order('fecha', { ascending: true }),
       sb.from('notas_cliente').select('*').eq('cliente_id', cid).order('creado', { ascending: true }),
+      sb.from('abonos').select('*').eq('cliente_id', cid).order('fecha', { ascending: true }),
+      sb.from('contratos').select('*').eq('cliente_id', cid).limit(1),
     ]);
     setCitas(c.data || []);
     setEntradas(b.data || []);
     setNotas(n.data || []);
+    setAbonos(a.data || []);
+    setContrato(co.data?.[0] || null);
+    return co.data?.[0] || null;
   }, []);
 
   useEffect(() => {
@@ -54,41 +67,15 @@ export default function Portal() {
       if (!data || data.length === 0) { setSinPerfil(true); return; }
       const cli = data[0];
       setCliente(cli);
-      await cargar(cli.id);
-      const { data: ob } = await sb.from('onboarding').select('id').eq('cliente_id', cli.id).limit(1);
-      if (!ob || ob.length === 0) setModalOnboard(true);
+      const contratoExistente = await cargar(cli.id);
+      // Onboarding con contrato solo para clientes digitales sin contrato aún
+      if (!contratoExistente && cli.contrato_tipo !== 'fisico') setNecesitaOnboarding(true);
     })();
   }, [router, cargar]);
 
   async function salir() {
     await getSb().auth.signOut();
     router.replace('/login');
-  }
-
-  /* ---------- onboarding ---------- */
-  async function guardarOnboarding(e) {
-    e.preventDefault();
-    const f = e.target;
-    const pdf = f.pdf.files[0];
-    if (!pdf) { showToast('Sube el PDF de tu cédula.'); return; }
-    setGuardando(true);
-    const sb = getSb();
-    const path = `${userId}/cedula-${Date.now()}.pdf`;
-    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, pdf);
-    if (upErr) { setGuardando(false); showToast('Error al subir el PDF.'); return; }
-    const { error } = await sb.from('onboarding').insert({
-      cliente_id: cliente.id,
-      nombres: f.nombres.value.trim(),
-      cedula_ruc: f.cedula.value.trim(),
-      universidad: f.universidad.value.trim(),
-      pdf_cedula_path: path,
-      terminos_aceptados: true,
-      fecha_aceptacion: new Date().toISOString(),
-    });
-    setGuardando(false);
-    if (error) { showToast('Error al guardar tus datos.'); return; }
-    setModalOnboard(false);
-    showToast('¡Datos registrados! Bienvenido/a.');
   }
 
   /* ---------- citas ---------- */
@@ -99,7 +86,6 @@ export default function Portal() {
     const tema = f.tema.value.trim();
     const elegido = new Date(fechaVal);
     if (elegido < new Date()) { showToast('Elige una fecha futura.'); return; }
-
     const diaStr = `${elegido.getFullYear()}-${String(elegido.getMonth() + 1).padStart(2, '0')}-${String(elegido.getDate()).padStart(2, '0')}`;
     const horaStr = `${String(elegido.getHours()).padStart(2, '0')}:${String(elegido.getMinutes()).padStart(2, '0')}`;
     const sb = getSb();
@@ -176,6 +162,10 @@ export default function Portal() {
   notas.forEach((n) => { (notasPorEntrada[n.bitacora_id] = notasPorEntrada[n.bitacora_id] || []).push(n); });
   const primerNombre = (cliente.nombre || '').split(/\s+/)[0];
 
+  const montoTotal = Number(cliente.monto_total || 0);
+  const totalAbonado = abonos.reduce((s, a) => s + Number(a.monto), 0);
+  const pctPagos = montoTotal > 0 ? Math.min(100, Math.round((totalAbonado / montoTotal) * 100)) : 0;
+
   return (
     <main className="min-h-screen">
       <header className="sticky top-0 z-40 border-b border-linea bg-papel/95 backdrop-blur">
@@ -194,10 +184,50 @@ export default function Portal() {
           {[cliente.universidad, cliente.carrera].filter(Boolean).join(' · ')}
         </p>
 
-        {/* Avances */}
+        {/* Avance de tesis + contrato */}
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
           <div className="card p-5"><Avance label="Elaboración de tesis" value={cliente.avance_tesis || 0} /></div>
-          <div className="card p-5"><Avance label="Pagos" value={cliente.avance_pagos || 0} olive={false} /></div>
+          <div className="card flex items-center justify-between p-5">
+            <div>
+              <p className="text-[13px] font-medium">Contrato</p>
+              <p className="mt-1 text-xs text-piedra">
+                {contrato
+                  ? (contrato.tipo === 'fisico' ? 'Firmado en físico' : `No. ${numeroContrato(contrato.num, contrato.anio)} · firmado`)
+                  : cliente.contrato_tipo === 'fisico' ? 'Firmado en físico' : 'Pendiente de firma'}
+              </p>
+            </div>
+            {contrato?.pdf_path && (
+              <button onClick={() => abrirDoc(contrato.pdf_path)} className="btn-ghost !px-4 !py-1.5 text-xs">Ver PDF</button>
+            )}
+          </div>
+        </div>
+
+        {/* Pagos */}
+        <div className="card mt-4 p-5">
+          <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-[13px] font-medium">Pagos</p>
+            {montoTotal > 0 ? (
+              <p className="text-xs text-piedra">
+                Abonado <b className="text-tinta">{usd(totalAbonado)}</b> de {usd(montoTotal)} · Saldo{' '}
+                <b className="text-tinta">{usd(Math.max(0, montoTotal - totalAbonado))}</b>
+              </p>
+            ) : (
+              <p className="text-xs text-piedra">Monto por definir con tu asesora</p>
+            )}
+          </div>
+          <div className="h-1.5 rounded-full bg-salvia">
+            <div className="h-1.5 rounded-full bg-olivo-neg transition-all duration-500" style={{ width: `${pctPagos}%` }} />
+          </div>
+          {abonos.length > 0 && (
+            <div className="mt-4 space-y-1.5 border-t border-dashed border-linea pt-3">
+              {abonos.map((a) => (
+                <div key={a.id} className="flex items-center justify-between text-sm">
+                  <span className="text-piedra">{fCorta(a.fecha)}{a.nota ? ` · ${a.nota}` : ''}</span>
+                  <span className="font-semibold">{usd(a.monto)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Citas */}
@@ -289,46 +319,19 @@ export default function Portal() {
         </div>
       </div>
 
-      {/* MODAL ONBOARDING */}
-      <Modal open={modalOnboard} title="Bienvenido/a · Completa tus datos">
-        <p className="mb-5 text-sm text-piedra">
-          Antes de comenzar, necesitamos algunos datos para tu registro y contrato de asesoría.
-        </p>
-        <form onSubmit={guardarOnboarding}>
-          <div className="mb-4">
-            <label className="lbl">Nombres completos</label>
-            <input name="nombres" className="field" required placeholder="Como aparece en tu cédula" />
-          </div>
-          <div className="mb-4 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="lbl">Cédula o RUC</label>
-              <input name="cedula" className="field" required placeholder="Ej. 1712345678" />
-            </div>
-            <div>
-              <label className="lbl">Universidad</label>
-              <input name="universidad" className="field" required placeholder="Tu universidad" />
-            </div>
-          </div>
-          <div className="mb-4">
-            <label className="lbl">PDF de la cédula</label>
-            <input name="pdf" type="file" accept="application/pdf" required className="text-sm text-piedra" />
-          </div>
-          <label className="mb-5 flex items-start gap-2.5 text-sm">
-            <input type="checkbox" required className="mt-1" />
-            <span>
-              He leído y acepto los{' '}
-              <button type="button" className="font-medium text-olivo underline"
-                onClick={() => alert('Términos y condiciones (texto pendiente de definir).')}>
-                términos y condiciones
-              </button>{' '}
-              del servicio de asesoría.
-            </span>
-          </label>
-          <button className="btn-olivo w-full" disabled={guardando}>
-            {guardando ? 'Guardando...' : 'Aceptar y continuar'}
-          </button>
-        </form>
-      </Modal>
+      {/* ONBOARDING + CONTRATO */}
+      {necesitaOnboarding && (
+        <OnboardingContrato
+          cliente={cliente}
+          userId={userId}
+          onDone={async () => {
+            setNecesitaOnboarding(false);
+            await cargar(cliente.id);
+            showToast('¡Contrato firmado! Revisa tu correo. Bienvenido/a.');
+          }}
+          showToast={showToast}
+        />
+      )}
 
       {/* MODAL SOLICITAR CITA */}
       <Modal open={modalCita} onClose={() => setModalCita(false)} title="Solicitar cita">
@@ -370,5 +373,186 @@ export default function Portal() {
 
       {toast}
     </main>
+  );
+}
+
+/* ============================================================
+   ONBOARDING EN 3 PASOS: datos → contrato → firma
+   ============================================================ */
+function OnboardingContrato({ cliente, userId, onDone, showToast }) {
+  const [paso, setPaso] = useState(1);
+  const [datos, setDatos] = useState({ nombres: '', cedula: '', universidad: cliente.universidad || '', correo: '', telefono: '', genero: 'F' });
+  const [pdfCedula, setPdfCedula] = useState(null);
+  const [firma, setFirma] = useState(null);
+  const [acepta, setAcepta] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+
+  const montoOk = Number(cliente.monto_total || 0) > 0;
+
+  function pasoDatos(e) {
+    e.preventDefault();
+    const f = e.target;
+    const d = {
+      nombres: f.nombres.value.trim(),
+      cedula: f.cedula.value.trim(),
+      universidad: f.universidad.value.trim(),
+      correo: f.correo.value.trim(),
+      telefono: f.telefono.value.trim(),
+      genero: f.genero.value,
+    };
+    const pdf = f.pdf.files[0];
+    if (!pdf) { showToast('Sube el PDF de tu cédula.'); return; }
+    setDatos(d);
+    setPdfCedula(pdf);
+    setPaso(2);
+  }
+
+  async function firmarYEnviar() {
+    if (!firma) { showToast('Dibuja tu firma para continuar.'); return; }
+    if (!acepta) { showToast('Debes aceptar el contrato.'); return; }
+    setEnviando(true);
+    const sb = getSb();
+    try {
+      // 1. Subir PDF de cédula
+      const cedulaPath = `${userId}/cedula-${Date.now()}.pdf`;
+      const { error: upErr } = await sb.storage.from(BUCKET).upload(cedulaPath, pdfCedula);
+      if (upErr) throw new Error('No se pudo subir el PDF de la cédula.');
+
+      // 2. Generar contrato en el servidor
+      const { data: { session } } = await sb.auth.getSession();
+      const res = await fetch('/api/contrato', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ ...datos, pdfCedulaPath: cedulaPath, firmaB64: firma }),
+      });
+      const out = await res.json();
+      if (!res.ok) throw new Error(out.error || 'Error al generar el contrato.');
+      onDone();
+    } catch (err) {
+      showToast(err.message);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  const clausulasVista = montoOk ? clausulas({
+    nombreCliente: datos.nombres || '—',
+    cedulaCliente: datos.cedula || '—',
+    telefonoCliente: datos.telefono,
+    genero: datos.genero,
+    montoTotal: Number(cliente.monto_total),
+    anticipo: Number(cliente.anticipo || 0),
+    fechaFirma: new Date().toISOString(),
+  }) : [];
+
+  return (
+    <Modal open title={paso === 1 ? 'Bienvenido/a · Completa tus datos' : paso === 2 ? 'Tu contrato de asesoría' : 'Firma tu contrato'} wide>
+      {/* indicador de pasos */}
+      <div className="mb-5 flex items-center gap-2">
+        {[1, 2, 3].map((p) => (
+          <span key={p} className={`h-1.5 flex-1 rounded-full ${p <= paso ? 'bg-olivo' : 'bg-salvia'}`} />
+        ))}
+      </div>
+
+      {paso === 1 && (
+        <form onSubmit={pasoDatos}>
+          <p className="mb-5 text-sm text-piedra">
+            Estos datos se usarán para generar tu contrato de asesoría. Revísalos con cuidado.
+          </p>
+          <div className="mb-4">
+            <label className="lbl">Nombres completos (como en tu cédula)</label>
+            <input name="nombres" defaultValue={datos.nombres} className="field" required />
+          </div>
+          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="lbl">Cédula o RUC</label>
+              <input name="cedula" defaultValue={datos.cedula} className="field" required placeholder="Ej. 1712345678" />
+            </div>
+            <div>
+              <label className="lbl">Teléfono celular</label>
+              <input name="telefono" defaultValue={datos.telefono} className="field" required placeholder="Ej. 0991234567" />
+            </div>
+          </div>
+          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="lbl">Correo electrónico</label>
+              <input name="correo" type="email" defaultValue={datos.correo} className="field" required placeholder="tu@correo.com" />
+              <p className="mt-1 text-[11px] text-piedra">Aquí recibirás tu contrato y las novedades de tu proceso.</p>
+            </div>
+            <div>
+              <label className="lbl">Universidad</label>
+              <input name="universidad" defaultValue={datos.universidad} className="field" required />
+            </div>
+          </div>
+          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="lbl">Tratamiento en el contrato</label>
+              <select name="genero" defaultValue={datos.genero} className="field">
+                <option value="F">LA CONTRATANTE (femenino)</option>
+                <option value="M">EL CONTRATANTE (masculino)</option>
+              </select>
+            </div>
+            <div>
+              <label className="lbl">PDF de tu cédula</label>
+              <input name="pdf" type="file" accept="application/pdf" required className="pt-2 text-sm text-piedra" />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button className="btn-olivo">Continuar</button>
+          </div>
+        </form>
+      )}
+
+      {paso === 2 && (
+        <div>
+          {!montoOk ? (
+            <p className="rounded-lg bg-salvia/50 p-4 text-sm text-piedra">
+              Tu asesora aún no ha registrado el monto de tu contrato. Escríbele para completarlo y vuelve a intentar.
+            </p>
+          ) : (
+            <>
+              <p className="mb-4 text-sm text-piedra">
+                Lee tu contrato completo. Verifica que tus datos (en negrita al inicio) estén correctos — si hay un error,
+                vuelve al paso anterior y corrígelo.
+              </p>
+              <div className="max-h-[380px] overflow-y-auto rounded-lg border border-linea bg-white p-5 text-[13px] leading-relaxed">
+                <p className="mb-4 text-center font-semibold">CONTRATO CIVIL DE PRESTACIÓN DE SERVICIOS DE ASESORÍA ACADÉMICA</p>
+                {clausulasVista.map(([t, c]) => (
+                  <p key={t} className="mb-3 whitespace-pre-line">
+                    <b>{t}</b> - {c}
+                  </p>
+                ))}
+              </div>
+            </>
+          )}
+          <div className="mt-5 flex justify-between">
+            <button onClick={() => setPaso(1)} className="btn-ghost">← Corregir datos</button>
+            {montoOk && <button onClick={() => setPaso(3)} className="btn-olivo">Estoy de acuerdo, continuar</button>}
+          </div>
+        </div>
+      )}
+
+      {paso === 3 && (
+        <div>
+          <p className="mb-4 text-sm text-piedra">
+            Dibuja tu firma tal como firmas en papel. Quedará incorporada en el contrato junto a la de tu asesora.
+          </p>
+          <FirmaPad onChange={setFirma} />
+          <label className="mt-5 flex items-start gap-2.5 text-sm">
+            <input type="checkbox" checked={acepta} onChange={(e) => setAcepta(e.target.checked)} className="mt-1" />
+            <span>
+              Declaro que he leído el contrato completo, que mis datos son correctos, y que al firmar
+              <b> acepto sus términos y condiciones</b> con plenos efectos entre las partes.
+            </span>
+          </label>
+          <div className="mt-6 flex justify-between">
+            <button onClick={() => setPaso(2)} className="btn-ghost" disabled={enviando}>← Volver al contrato</button>
+            <button onClick={firmarYEnviar} className="btn-olivo" disabled={enviando}>
+              {enviando ? 'Generando contrato...' : 'Firmar y aceptar'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }

@@ -26,6 +26,8 @@ export default function Admin() {
   const [pendientes, setPendientes] = useState([]);
   const [citasTodas, setCitasTodas] = useState([]);
   const [bloqueos, setBloqueos] = useState([]);
+  const [abonosTodos, setAbonosTodos] = useState([]);
+  const [contratosTodos, setContratosTodos] = useState([]);
   const [mes, setMes] = useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [diaSel, setDiaSel] = useState(null);
   const [modalCliente, setModalCliente] = useState(null); // null | {} nuevo | cliente
@@ -36,17 +38,34 @@ export default function Admin() {
   /* ---------- carga ---------- */
   const cargarTodo = useCallback(async () => {
     const sb = getSb();
-    const [cl, pe, ci, bl] = await Promise.all([
+    const [cl, pe, ci, bl, ab, co] = await Promise.all([
       sb.from('clientes').select('*').order('creado', { ascending: false }),
       sb.from('citas').select('*, clientes(nombre, universidad, carrera)').eq('estado', 'pendiente').order('fecha_propuesta'),
       sb.from('citas').select('*, clientes(nombre)').in('estado', ['pendiente', 'confirmada']),
       sb.from('bloqueos').select('*'),
+      sb.from('abonos').select('*').order('fecha'),
+      sb.from('contratos').select('id, cliente_id, num, anio, tipo, pdf_path, firmado_en'),
     ]);
     setClientes(cl.data || []);
     setPendientes(pe.data || []);
     setCitasTodas(ci.data || []);
     setBloqueos(bl.data || []);
+    setAbonosTodos(ab.data || []);
+    setContratosTodos(co.data || []);
   }, []);
+
+  /* aviso por correo (no bloquea si falla) */
+  async function notificar(tipo, clienteId, datos) {
+    try {
+      const sb = getSb();
+      const { data: { session } } = await sb.auth.getSession();
+      await fetch('/api/notificar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ tipo, clienteId, datos }),
+      });
+    } catch (e) { console.warn('No se pudo enviar el aviso:', e); }
+  }
 
   useEffect(() => {
     (async () => {
@@ -67,12 +86,15 @@ export default function Admin() {
     e.preventDefault();
     const f = e.target;
     if (!f.fecha.value) { showToast('Elige la fecha confirmada.'); return; }
+    const fechaISO = new Date(f.fecha.value).toISOString();
+    const nota = f.nota.value.trim() || null;
     const { error } = await getSb().from('citas').update({
       estado: 'confirmada',
-      fecha_confirmada: new Date(f.fecha.value).toISOString(),
-      nota_admin: f.nota.value.trim() || null,
+      fecha_confirmada: fechaISO,
+      nota_admin: nota,
     }).eq('id', modalGestion.id);
     if (error) { showToast('Error al confirmar.'); return; }
+    notificar('cita', modalGestion.cliente_id, { fecha: fechaISO, nota });
     setModalGestion(null);
     await cargarTodo();
     showToast('Cita confirmada.');
@@ -277,24 +299,31 @@ export default function Admin() {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {listaClientes.map((c) => (
-              <button key={c.id} onClick={() => setModalCliente(c)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:border-olivo hover:shadow-md">
-                <div className="mb-4 flex items-center gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-olivo text-sm font-semibold text-white">
-                    {iniciales(c.nombre)}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">{c.nombre}</span>
-                    <span className="block truncate text-xs text-piedra">{[c.universidad, c.carrera].filter(Boolean).join(' · ')}</span>
-                  </span>
-                  <span className="ml-auto shrink-0 rounded-full bg-salvia px-2.5 py-0.5 text-[10px] font-semibold uppercase text-olivo-prof">
-                    {c.nivel || 'Posgrado'}
-                  </span>
-                </div>
-                <MiniAvance label="Elaboración de tesis" v={c.avance_tesis} color="bg-olivo" />
-                <div className="mt-3"><MiniAvance label="Pagos" v={c.avance_pagos} color="bg-olivo-neg" /></div>
-              </button>
-            ))}
+            {listaClientes.map((c) => {
+              const abonado = abonosTodos.filter((a) => a.cliente_id === c.id).reduce((s, a) => s + Number(a.monto), 0);
+              const monto = Number(c.monto_total || 0);
+              const pct = monto > 0 ? Math.min(100, Math.round((abonado / monto) * 100)) : 0;
+              return (
+                <button key={c.id} onClick={() => setModalCliente(c)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:border-olivo hover:shadow-md">
+                  <div className="mb-4 flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-olivo text-sm font-semibold text-white">
+                      {iniciales(c.nombre)}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold">{c.nombre}</span>
+                      <span className="block truncate text-xs text-piedra">{[c.universidad, c.carrera].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    <span className="ml-auto shrink-0 rounded-full bg-salvia px-2.5 py-0.5 text-[10px] font-semibold uppercase text-olivo-prof">
+                      {c.nivel || 'Posgrado'}
+                    </span>
+                  </div>
+                  <MiniAvance label="Elaboración de tesis" v={c.avance_tesis} color="bg-olivo" />
+                  <div className="mt-3">
+                    <MiniAvance label={monto > 0 ? `Pagos · $${abonado.toFixed(0)} de $${monto.toFixed(0)}` : 'Pagos · monto sin definir'} v={pct} color="bg-olivo-neg" />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -303,8 +332,11 @@ export default function Admin() {
       {modalCliente !== null && (
         <ModalCliente cliente={modalCliente.id ? modalCliente : null}
           clientes={clientes}
+          contrato={modalCliente.id ? contratosTodos.find((x) => x.cliente_id === modalCliente.id) : null}
           onClose={() => setModalCliente(null)}
           onDone={async (msg) => { setModalCliente(null); await cargarTodo(); showToast(msg); }}
+          onRefrescar={cargarTodo}
+          notificar={notificar}
           showToast={showToast} />
       )}
 
@@ -359,6 +391,83 @@ function MiniAvance({ label, v, color }) {
   );
 }
 
+/* ---------- abonos ---------- */
+function AbonosSection({ cliente, abonos, onCambio, notificar, showToast }) {
+  const [abFecha, setAbFecha] = useState('');
+  const [abMonto, setAbMonto] = useState('');
+  const [abNota, setAbNota] = useState('');
+  const monto = Number(cliente.monto_total || 0);
+  const total = abonos.reduce((s, a) => s + Number(a.monto), 0);
+  const pct = monto > 0 ? Math.min(100, Math.round((total / monto) * 100)) : 0;
+  const fmt = (n) => '$' + Number(n).toFixed(2);
+
+  async function agregar() {
+    const valor = Number(abMonto);
+    if (!abFecha || !valor || valor <= 0) { showToast('Completa fecha y monto del abono.'); return; }
+    const { error } = await getSb().from('abonos').insert({
+      cliente_id: cliente.id, fecha: abFecha, monto: valor, nota: abNota.trim() || null,
+    });
+    if (error) { showToast('Error al registrar el abono.'); return; }
+    notificar?.('abono', cliente.id, {
+      fecha: abFecha, monto: valor,
+      totalAbonado: total + valor, montoTotal: monto, saldo: Math.max(0, monto - total - valor),
+    });
+    setAbFecha(''); setAbMonto(''); setAbNota('');
+    await onCambio();
+    showToast('Abono registrado.');
+  }
+
+  async function eliminar(id) {
+    if (!confirm('¿Eliminar este abono?')) return;
+    const { error } = await getSb().from('abonos').delete().eq('id', id);
+    if (error) { showToast('Error al eliminar.'); return; }
+    await onCambio();
+    showToast('Abono eliminado.');
+  }
+
+  return (
+    <div className="mb-5">
+      <p className="mb-3 border-b border-linea pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-olivo">
+        Pagos y abonos
+      </p>
+      <div className="mb-3 rounded-lg bg-salvia/30 p-3">
+        <div className="mb-1.5 flex justify-between text-xs">
+          <span className="font-medium">
+            {monto > 0 ? `Abonado ${fmt(total)} de ${fmt(monto)} · Saldo ${fmt(Math.max(0, monto - total))}` : 'Define el monto total del contrato arriba'}
+          </span>
+          <span className="font-semibold">{pct}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-white">
+          <div className="h-1.5 rounded-full bg-olivo-neg" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div className="mb-3 rounded-lg border border-linea bg-salvia/30 p-3">
+        <div className="grid gap-3 sm:grid-cols-[130px_110px_1fr_auto]">
+          <input type="date" value={abFecha} onChange={(e) => setAbFecha(e.target.value)} className="field" />
+          <input type="number" step="0.01" min="0" placeholder="Monto" value={abMonto} onChange={(e) => setAbMonto(e.target.value)} className="field" />
+          <input placeholder="Nota (opcional): transferencia, efectivo..." value={abNota} onChange={(e) => setAbNota(e.target.value)} className="field" />
+          <button type="button" onClick={agregar} className="rounded-lg border border-linea bg-white px-3 py-1.5 text-xs font-medium text-olivo-prof hover:border-olivo">
+            + Abono
+          </button>
+        </div>
+      </div>
+      {abonos.length > 0 && (
+        <div className="max-h-36 space-y-1.5 overflow-y-auto">
+          {abonos.map((a) => (
+            <div key={a.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm border border-linea">
+              <span className="text-piedra">{fCorta(a.fecha)}{a.nota ? ` · ${a.nota}` : ''}</span>
+              <span className="flex items-center gap-3">
+                <b>{fmt(a.monto)}</b>
+                <button type="button" onClick={() => eliminar(a.id)} className="text-xs text-piedra hover:text-red-700">✕</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- formulario de bloqueo ---------- */
 function BloqueoForm({ diaSel, onSubmit, onCancel }) {
   const [todoDia, setTodoDia] = useState(true);
@@ -393,24 +502,26 @@ function BloqueoForm({ diaSel, onSubmit, onCancel }) {
 }
 
 /* ---------- modal crear/editar cliente ---------- */
-function ModalCliente({ cliente, clientes, onClose, onDone, showToast }) {
+function ModalCliente({ cliente, clientes, contrato, onClose, onDone, onRefrescar, notificar, showToast }) {
   const esEdicion = !!cliente;
   const [tesis, setTesis] = useState(cliente?.avance_tesis ?? 0);
-  const [pagos, setPagos] = useState(cliente?.avance_pagos ?? 0);
   const [clave, setClave] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [entradas, setEntradas] = useState([]);
   const [notasCli, setNotasCli] = useState([]);
+  const [abonos, setAbonos] = useState([]);
 
   const cargarBitacora = useCallback(async () => {
     if (!esEdicion) return;
     const sb = getSb();
-    const [b, n] = await Promise.all([
+    const [b, n, a] = await Promise.all([
       sb.from('bitacora').select('*').eq('cliente_id', cliente.id).order('fecha'),
       sb.from('notas_cliente').select('*').eq('cliente_id', cliente.id).order('creado'),
+      sb.from('abonos').select('*').eq('cliente_id', cliente.id).order('fecha'),
     ]);
     setEntradas(b.data || []);
     setNotasCli(n.data || []);
+    setAbonos(a.data || []);
   }, [esEdicion, cliente]);
 
   useEffect(() => { cargarBitacora(); }, [cargarBitacora]);
@@ -424,9 +535,13 @@ function ModalCliente({ cliente, clientes, onClose, onDone, showToast }) {
       carrera: f.carrera.value.trim(),
       nivel: f.nivel.value,
       avance_tesis: tesis,
-      avance_pagos: pagos,
+      fecha_inicio: f.fechainicio.value || null,
+      monto_total: f.monto.value ? Number(f.monto.value) : null,
+      anticipo: f.anticipo.value ? Number(f.anticipo.value) : 0,
+      contrato_tipo: f.contratotipo.value,
     };
     if (!base.nombre || !base.universidad || !base.carrera) { showToast('Completa nombre, universidad y carrera.'); return; }
+    if (base.monto_total != null && base.anticipo > base.monto_total) { showToast('El anticipo no puede superar el monto total.'); return; }
     setGuardando(true);
     const sb = getSb();
 
@@ -515,6 +630,41 @@ function ModalCliente({ cliente, clientes, onClose, onDone, showToast }) {
           </select>
         </div>
 
+        <p className="mb-3 border-b border-linea pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-olivo">Contrato</p>
+        <div className="mb-4 grid gap-4 sm:grid-cols-3">
+          <div>
+            <label className="lbl">Fecha de inicio</label>
+            <input name="fechainicio" type="date" defaultValue={cliente?.fecha_inicio || ''} className="field" />
+          </div>
+          <div>
+            <label className="lbl">Monto total (USD)</label>
+            <input name="monto" type="number" step="0.01" min="0" defaultValue={cliente?.monto_total ?? ''} className="field" placeholder="Ej. 300" />
+          </div>
+          <div>
+            <label className="lbl">Anticipo (USD)</label>
+            <input name="anticipo" type="number" step="0.01" min="0" defaultValue={cliente?.anticipo ?? ''} className="field" placeholder="Ej. 150" />
+          </div>
+        </div>
+        <div className="mb-4">
+          <label className="lbl">Firma del contrato</label>
+          <select name="contratotipo" defaultValue={cliente?.contrato_tipo || 'digital'} className="field">
+            <option value="digital">Digital — el cliente firma en la plataforma</option>
+            <option value="fisico">Físico — ya firmado en papel (clientes existentes)</option>
+          </select>
+          {esEdicion && (
+            <p className="mt-1.5 text-xs text-piedra">
+              {contrato
+                ? <>Contrato {contrato.tipo === 'fisico' ? 'físico registrado' : `No. A-${contrato.anio}-${String(contrato.num).padStart(3, '0')} firmado`}
+                    {contrato.pdf_path && <button type="button" onClick={async () => {
+                      const { data } = await getSb().storage.from('documentos').createSignedUrl(contrato.pdf_path, 60);
+                      if (data) window.open(data.signedUrl, '_blank');
+                    }} className="ml-2 font-medium text-olivo-prof underline">Ver PDF</button>}
+                  </>
+                : 'Aún sin contrato firmado en la plataforma.'}
+            </p>
+          )}
+        </div>
+
         {!esEdicion && (
           <>
             <p className="mb-3 border-b border-linea pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-olivo">Acceso del cliente</p>
@@ -538,14 +688,16 @@ function ModalCliente({ cliente, clientes, onClose, onDone, showToast }) {
         )}
 
         <p className="mb-3 border-b border-linea pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-olivo">Avance</p>
-        <div className="mb-3">
+        <div className="mb-5">
           <label className="lbl">Elaboración de tesis · {tesis}%</label>
           <input type="range" min="0" max="100" step="5" value={tesis} onChange={(e) => setTesis(+e.target.value)} className="w-full" />
         </div>
-        <div className="mb-5">
-          <label className="lbl">Pagos · {pagos}%</label>
-          <input type="range" min="0" max="100" step="5" value={pagos} onChange={(e) => setPagos(+e.target.value)} className="w-full" />
-        </div>
+
+        {esEdicion && (
+          <AbonosSection cliente={cliente} abonos={abonos}
+            onCambio={async () => { await cargarBitacora(); onRefrescar?.(); }}
+            notificar={notificar} showToast={showToast} />
+        )}
 
         {esEdicion && (
           <div className="mb-5">
