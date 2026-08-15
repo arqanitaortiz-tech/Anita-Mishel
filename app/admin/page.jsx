@@ -119,6 +119,27 @@ export default function Admin() {
   const nActivos = clientes.filter((c) => (c.estado || 'activo') === 'activo').length;
   const nTerminados = clientes.filter((c) => c.estado === 'terminado').length;
 
+  const hoy = new Date();
+  const enEsteMes = (fechaStr) => {
+    if (!fechaStr) return false;
+    const d = new Date(fechaStr + 'T00:00:00');
+    return d.getMonth() === hoy.getMonth() && d.getFullYear() === hoy.getFullYear();
+  };
+  const porCobrar = clientes
+    .filter((c) => (c.estado || 'activo') === 'activo')
+    .reduce((s, c) => s + Math.max(0, Number(c.monto_total || 0) - abonadoDe(c.id)), 0);
+  const cobradoMes =
+    abonosTodos.filter((a) => enEsteMes(a.fecha)).reduce((s, a) => s + Number(a.monto), 0) +
+    clientes.filter((c) => enEsteMes(c.fecha_inicio)).reduce((s, c) => s + Number(c.anticipo || 0), 0);
+  const proximas = eventos
+    .filter((e) => e.estado === 'confirmada' && new Date(e.iso) >= hoy)
+    .sort((a, b) => (a.iso < b.iso ? -1 : 1)).slice(0, 5);
+  const cobros = clientes
+    .filter((c) => (c.estado || 'activo') === 'activo' && Number(c.monto_total || 0) > 0)
+    .map((c) => ({ id: c.id, nombre: c.nombre, abonado: abonadoDe(c.id), monto: Number(c.monto_total), saldo: Number(c.monto_total) - abonadoDe(c.id) }))
+    .filter((x) => x.saldo > 0.005).sort((a, b) => b.saldo - a.saldo).slice(0, 6);
+  const usd0 = (n) => '$' + Math.round(Number(n || 0)).toLocaleString('es-EC');
+
   const f = filtro.trim().toLowerCase();
   const listaClientes = clientes.filter((c) => !f ||
     (c.nombre || '').toLowerCase().includes(f) || (c.universidad || '').toLowerCase().includes(f) || (c.carrera || '').toLowerCase().includes(f));
@@ -149,27 +170,84 @@ export default function Admin() {
         {seccion === 'resumen' && (
           <div>
             <h1 className="font-display text-2xl font-semibold tracking-tight">Resumen</h1>
-            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[['Clientes activos', nActivos], ['Terminados', nTerminados], ['Solicitudes', pendientes.length], ['Total', clientes.length]].map(([t, v]) => (
-                <div key={t} className="rounded-xl bg-salvia/50 p-4">
-                  <p className="text-[13px] text-piedra">{t}</p>
-                  <p className="mt-1 font-display text-2xl font-semibold">{v}</p>
-                </div>
-              ))}
-            </div>
-            {pendientes.length > 0 && (
-              <div className="mt-8">
-                <h2 className="mb-3 font-display text-lg font-semibold">Requieren tu atención</h2>
-                <div className="space-y-2">
-                  {pendientes.map((e) => (
-                    <button key={e.id} onClick={() => onGestionar(e)} className="card flex w-full items-center justify-between gap-3 p-3.5 text-left transition hover:border-olivo">
-                      <span className="min-w-0 truncate text-sm"><b>{e.nombre}</b> — {e.tema}</span>
-                      <span className="shrink-0 text-xs font-semibold text-olivo-prof">{fhCorta(e.iso)}</span>
-                    </button>
-                  ))}
-                </div>
+
+            {/* Indicadores */}
+            <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div className="card p-4">
+                <p className="text-xs text-piedra">Clientes activos</p>
+                <p className="mt-1 font-display text-2xl font-semibold">{nActivos}</p>
               </div>
-            )}
+              <div className="card p-4">
+                <p className="text-xs text-piedra">Prospectos</p>
+                <p className="mt-1 font-display text-2xl font-semibold text-[#9C5A42]">0</p>
+              </div>
+              <div className="rounded-xl bg-tinta p-4 text-papel">
+                <p className="text-xs text-papel/70">Por cobrar</p>
+                <p className="mt-1 font-display text-2xl font-semibold">{usd0(porCobrar)}</p>
+              </div>
+              <div className="card p-4">
+                <p className="text-xs text-piedra">Cobrado este mes</p>
+                <p className="mt-1 font-display text-2xl font-semibold text-olivo-prof">{usd0(cobradoMes)}</p>
+              </div>
+            </div>
+
+            {/* Atención + próximas */}
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-terracotta/30 bg-terracotta/[0.06] p-4">
+                <p className="mb-3 font-display text-sm font-semibold">
+                  Requieren tu atención
+                  <span className="ml-2 rounded-full bg-terracotta px-2 py-0.5 text-[11px] font-semibold text-white">{pendientes.length}</span>
+                </p>
+                {pendientes.length === 0 ? (
+                  <p className="text-sm text-piedra">Nada pendiente por ahora.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {pendientes.map((e) => (
+                      <button key={e.id} onClick={() => onGestionar(e)} className="flex w-full items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-left text-sm transition hover:ring-1 hover:ring-olivo">
+                        <span className="min-w-0 truncate"><b>{e.nombre}</b> · solicita cita</span>
+                        <span className="shrink-0 text-xs font-semibold text-olivo-prof">{fhCorta(e.iso)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="card p-4">
+                <p className="mb-3 font-display text-sm font-semibold">Próximas citas</p>
+                {proximas.length === 0 ? (
+                  <p className="text-sm text-piedra">No hay citas confirmadas próximas.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {proximas.map((e) => (
+                      <div key={e.id} className="flex items-center gap-3 text-sm">
+                        <span className="w-24 shrink-0 font-display font-semibold text-piedra">{fhCorta(e.iso)}</span>
+                        <span className="min-w-0 truncate">{e.nombre}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Cobros pendientes */}
+            <div className="card mt-4 p-4">
+              <p className="mb-3 font-display text-sm font-semibold">Cobros pendientes</p>
+              {cobros.length === 0 ? (
+                <p className="text-sm text-piedra">Todos los clientes activos están al día.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <tbody>
+                    {cobros.map((c) => (
+                      <tr key={c.id} className="border-b border-linea last:border-0">
+                        <td className="py-2 font-medium">{c.nombre}</td>
+                        <td className="py-2 text-piedra">{usd0(c.abonado)} de {usd0(c.monto)}</td>
+                        <td className="py-2 text-right font-semibold text-[#9C5A42]">Debe {usd0(c.saldo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
 
