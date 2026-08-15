@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import BotonConsulta from '@/components/BotonConsulta';
 
 export default function Home() {
   return (
@@ -31,9 +32,10 @@ export default function Home() {
             universitaria o maestría mientras trabajan a tiempo completo.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+            <BotonConsulta />
             <a
               href="https://wa.me/593981347078?text=Hola%20Anita,%20me%20interesa%20tu%20asesor%C3%ADa%20de%20tesis"
-              target="_blank" rel="noopener noreferrer" className="btn-olivo"
+              target="_blank" rel="noopener noreferrer" className="btn-ghost"
             >
               Escribir por WhatsApp
             </a>

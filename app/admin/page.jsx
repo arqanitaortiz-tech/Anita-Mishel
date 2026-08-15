@@ -25,6 +25,7 @@ function fmtReunion(iso) {
 const MENU = [
   ['resumen', 'Resumen'],
   ['clientes', 'Clientes'],
+  ['consultas', 'Consultas'],
   ['calendario', 'Calendario'],
   ['basedatos', 'Base de datos'],
 ];
@@ -40,24 +41,28 @@ export default function Admin() {
   const [contactos, setContactos] = useState({});
   const [citas, setCitas] = useState([]);
   const [bloqueos, setBloqueos] = useState([]);
+  const [consultas, setConsultas] = useState([]);
 
   const [modalCliente, setModalCliente] = useState(null);
   const [modalGestion, setModalGestion] = useState(null);
+  const [modalConsulta, setModalConsulta] = useState(null);
   const [filtro, setFiltro] = useState('');
 
   const cargarTodo = useCallback(async () => {
     const sb = getSb();
-    const [cl, ab, ci, bl, ob] = await Promise.all([
+    const [cl, ab, ci, bl, ob, co] = await Promise.all([
       sb.from('clientes').select('*').order('creado', { ascending: false }),
       sb.from('abonos').select('*'),
       sb.from('citas').select('*, clientes(nombre)').in('estado', ['pendiente', 'confirmada']),
       sb.from('bloqueos').select('*'),
       sb.from('onboarding').select('cliente_id, correo, telefono'),
+      sb.from('consultas').select('*').in('estado', ['nueva', 'atendida']).order('fecha'),
     ]);
     setClientes(cl.data || []);
     setAbonosTodos(ab.data || []);
     setCitas(ci.data || []);
     setBloqueos(bl.data || []);
+    setConsultas(co.data || []);
     const map = {};
     (ob.data || []).forEach((o) => { map[o.cliente_id] = { correo: o.correo, telefono: o.telefono }; });
     setContactos(map);
@@ -128,27 +133,51 @@ export default function Admin() {
     setModalGestion(null); await cargarTodo(); showToast('Cita cancelada.');
   }
 
+  async function atenderConsulta(id) {
+    const { error } = await getSb().from('consultas').update({ estado: 'atendida' }).eq('id', id);
+    if (error) { showToast('Error.'); return; }
+    setModalConsulta(null); await cargarTodo(); showToast('Consulta marcada como atendida.');
+  }
+  async function cancelarConsulta(id) {
+    if (!confirm('¿Cancelar esta consulta?')) return;
+    const { error } = await getSb().from('consultas').update({ estado: 'cancelada' }).eq('id', id);
+    if (error) { showToast('Error.'); return; }
+    setModalConsulta(null); await cargarTodo(); showToast('Consulta cancelada.');
+  }
+  function convertirConsulta(c) {
+    setModalConsulta(null);
+    setModalCliente({ _consultaId: c.id, prefill: { nombre: c.nombres, universidad: c.universidad, nivel: c.nivel } });
+  }
+
   if (!listo) return <Cargando />;
 
   /* ---------- datos derivados ---------- */
-  const eventos = citas.map((c) => ({
-    id: c.id, tipo: 'cliente', nombre: c.clientes?.nombre || 'Cliente', tema: c.tema,
-    iso: citaISO(c), estado: c.estado, raw: c,
-  }));
+  const eventos = [
+    ...citas.map((c) => ({ id: c.id, tipo: 'cliente', nombre: c.clientes?.nombre || 'Cliente', tema: c.tema, iso: citaISO(c), estado: c.estado, raw: c })),
+    ...consultas.map((c) => ({ id: c.id, tipo: 'prospecto', nombre: c.nombres, tema: c.tema, iso: c.fecha, estado: c.estado, raw: c })),
+  ];
 
   const abonadoDe = (id) => Number((clientes.find((c) => c.id === id)?.anticipo) || 0) +
     abonosTodos.filter((a) => a.cliente_id === id).reduce((s, a) => s + Number(a.monto), 0);
 
-  const registros = clientes.map((c) => ({
-    id: c.id, nombre: c.nombre, estado: c.estado || 'activo', nivel: c.nivel,
-    universidad: c.universidad, carrera: c.carrera, avanceTesis: c.avance_tesis,
-    abonado: abonadoDe(c.id), montoTotal: Number(c.monto_total || 0),
-    telefono: contactos[c.id]?.telefono || '', correo: contactos[c.id]?.correo || '', fechaInicio: c.fecha_inicio,
-  }));
+  const registros = [
+    ...clientes.map((c) => ({
+      id: c.id, nombre: c.nombre, estado: c.estado || 'activo', nivel: c.nivel,
+      universidad: c.universidad, carrera: c.carrera, avanceTesis: c.avance_tesis,
+      abonado: abonadoDe(c.id), montoTotal: Number(c.monto_total || 0),
+      telefono: contactos[c.id]?.telefono || '', correo: contactos[c.id]?.correo || '', fechaInicio: c.fecha_inicio,
+    })),
+    ...consultas.map((c) => ({
+      id: 'p' + c.id, nombre: c.nombres, estado: 'prospecto', nivel: c.nivel,
+      universidad: c.universidad, carrera: '', avanceTesis: 0, abonado: 0, montoTotal: 0,
+      telefono: c.telefono, correo: c.correo, fechaInicio: c.fecha ? c.fecha.slice(0, 10) : null,
+    })),
+  ];
 
-  const pendientes = eventos.filter((e) => e.estado === 'pendiente');
+  const pendientes = eventos.filter((e) => (e.tipo === 'cliente' && e.estado === 'pendiente') || (e.tipo === 'prospecto' && e.estado === 'nueva'));
   const nActivos = clientes.filter((c) => (c.estado || 'activo') === 'activo').length;
   const nTerminados = clientes.filter((c) => c.estado === 'terminado').length;
+  const nProspectos = consultas.length;
 
   const hoy = new Date();
   const enEsteMes = (fechaStr) => {
@@ -163,7 +192,7 @@ export default function Admin() {
     abonosTodos.filter((a) => enEsteMes(a.fecha)).reduce((s, a) => s + Number(a.monto), 0) +
     clientes.filter((c) => enEsteMes(c.fecha_inicio)).reduce((s, c) => s + Number(c.anticipo || 0), 0);
   const proximas = eventos
-    .filter((e) => e.estado === 'confirmada' && new Date(e.iso) >= hoy)
+    .filter((e) => new Date(e.iso) >= hoy && ((e.tipo === 'cliente' && e.estado === 'confirmada') || (e.tipo === 'prospecto' && e.estado === 'atendida')))
     .sort((a, b) => (a.iso < b.iso ? -1 : 1)).slice(0, 5);
   const cobros = clientes
     .filter((c) => (c.estado || 'activo') === 'activo' && Number(c.monto_total || 0) > 0)
@@ -177,6 +206,7 @@ export default function Admin() {
 
   function onGestionar(ev) {
     if (ev.tipo === 'cliente') setModalGestion(ev.raw);
+    else setModalConsulta(ev.raw);
   }
 
   return (
@@ -208,10 +238,10 @@ export default function Admin() {
                 <p className="text-xs text-piedra">Clientes activos</p>
                 <p className="mt-1 font-display text-2xl font-semibold">{nActivos}</p>
               </div>
-              <div className="card p-4">
+              <button onClick={() => setSeccion('consultas')} className="card p-4 text-left">
                 <p className="text-xs text-piedra">Prospectos</p>
-                <p className="mt-1 font-display text-2xl font-semibold text-[#9C5A42]">0</p>
-              </div>
+                <p className="mt-1 font-display text-2xl font-semibold text-[#9C5A42]">{nProspectos}</p>
+              </button>
               <div className="rounded-xl bg-tinta p-4 text-papel">
                 <p className="text-xs text-papel/70">Por cobrar</p>
                 <p className="mt-1 font-display text-2xl font-semibold">{usd0(porCobrar)}</p>
@@ -235,7 +265,7 @@ export default function Admin() {
                   <div className="space-y-2">
                     {pendientes.map((e) => (
                       <button key={e.id} onClick={() => onGestionar(e)} className="flex w-full items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-left text-sm transition hover:ring-1 hover:ring-olivo">
-                        <span className="min-w-0 truncate"><b>{e.nombre}</b> · solicita cita</span>
+                        <span className="min-w-0 truncate"><b>{e.nombre}</b> · {e.tipo === 'prospecto' ? 'consulta nueva' : 'solicita cita'}</span>
                         <span className="shrink-0 text-xs font-semibold text-olivo-prof">{fhCorta(e.iso)}</span>
                       </button>
                     ))}
@@ -328,6 +358,32 @@ export default function Admin() {
           </div>
         )}
 
+        {seccion === 'consultas' && (
+          <div>
+            <h1 className="font-display text-2xl font-semibold tracking-tight">Consultas de nuevos</h1>
+            <p className="mt-1 text-sm text-piedra">Prospectos que agendaron una consulta desde la web.</p>
+            {consultas.length === 0 ? (
+              <div className="card mt-6 border-dashed p-12 text-center text-sm text-piedra">No hay consultas nuevas por ahora.</div>
+            ) : (
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {consultas.map((c) => (
+                  <button key={c.id} onClick={() => setModalConsulta(c)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:border-olivo hover:shadow-md">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-sm font-semibold">{c.nombres}</span>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ${c.estado === 'atendida' ? 'bg-salvia text-olivo-prof' : 'bg-terracotta/20 text-[#9C5A42]'}`}>
+                        {c.estado === 'atendida' ? 'Atendida' : 'Nueva'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-piedra">{c.ciudad} · {c.universidad} · {c.nivel}</p>
+                    <p className="mt-2 text-sm">{c.tema}</p>
+                    <p className="mt-2 text-xs font-semibold text-terracotta">{fhCorta(c.fecha)}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {seccion === 'calendario' && (
           <div>
             <h1 className="mb-6 font-display text-2xl font-semibold tracking-tight">Calendario</h1>
@@ -345,11 +401,38 @@ export default function Admin() {
 
       {/* MODAL CLIENTE */}
       {modalCliente !== null && (
-        <ModalCliente cliente={modalCliente.id ? modalCliente : null} clientes={clientes}
+        <ModalCliente cliente={modalCliente.id ? modalCliente : null} clientes={clientes} prefill={modalCliente.prefill}
           onClose={() => setModalCliente(null)}
-          onDone={async (msg) => { setModalCliente(null); await cargarTodo(); showToast(msg); }}
+          onDone={async (msg) => {
+            const consId = modalCliente?._consultaId;
+            setModalCliente(null);
+            if (consId) await getSb().from('consultas').update({ estado: 'convertida' }).eq('id', consId);
+            await cargarTodo(); showToast(msg);
+          }}
           onRefrescar={cargarTodo} notificar={notificar} showToast={showToast} />
       )}
+
+      {/* MODAL CONSULTA (PROSPECTO) */}
+      <Modal open={!!modalConsulta} onClose={() => setModalConsulta(null)} title="Consulta de prospecto">
+        {modalConsulta && (
+          <div>
+            <div className="mb-4 space-y-1 rounded-lg bg-salvia/50 px-4 py-3 text-sm">
+              <p className="font-semibold">{modalConsulta.nombres}</p>
+              <p className="text-piedra">{modalConsulta.ciudad} · {modalConsulta.universidad} · {modalConsulta.nivel}</p>
+              <p className="text-piedra">Correo: {modalConsulta.correo} · Tel: {modalConsulta.telefono}</p>
+              <p className="text-piedra">Fecha propuesta: {fhCorta(modalConsulta.fecha)}</p>
+              <p className="text-piedra">Tema: {modalConsulta.tema}</p>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-linea pt-4">
+              <div className="flex gap-4">
+                {modalConsulta.estado !== 'atendida' && <button onClick={() => atenderConsulta(modalConsulta.id)} className="text-sm font-medium text-olivo-prof underline">Marcar atendida</button>}
+                <button onClick={() => cancelarConsulta(modalConsulta.id)} className="text-sm text-red-700 underline">Cancelar</button>
+              </div>
+              <button onClick={() => convertirConsulta(modalConsulta)} className="btn-olivo">Convertir en cliente</button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* MODAL GESTIÓN CITA */}
       <Modal open={!!modalGestion} onClose={() => setModalGestion(null)}
@@ -428,7 +511,7 @@ function MiniAvance({ label, v, color }) {
 /* ============================================================
    MODAL CREAR / EDITAR CLIENTE
    ============================================================ */
-function ModalCliente({ cliente, clientes, onClose, onDone, onRefrescar, notificar, showToast }) {
+function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar, notificar, showToast }) {
   const esEdicion = !!cliente;
   const [tesis, setTesis] = useState(cliente?.avance_tesis ?? 0);
   const [clave, setClave] = useState('');
@@ -543,13 +626,13 @@ function ModalCliente({ cliente, clientes, onClose, onDone, onRefrescar, notific
       )}
       <form onSubmit={guardar}>
         <p className="mb-3 border-b border-linea pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-olivo">Datos del cliente</p>
-        <div className="mb-4"><label className="lbl">Nombre completo</label><input name="nombre" defaultValue={cliente?.nombre || ''} required className="field" /></div>
+        <div className="mb-4"><label className="lbl">Nombre completo</label><input name="nombre" defaultValue={cliente?.nombre || prefill?.nombre || ''} required className="field" /></div>
         <div className="mb-4 grid gap-4 sm:grid-cols-2">
-          <div><label className="lbl">Universidad</label><input name="universidad" defaultValue={cliente?.universidad || ''} required className="field" /></div>
+          <div><label className="lbl">Universidad</label><input name="universidad" defaultValue={cliente?.universidad || prefill?.universidad || ''} required className="field" /></div>
           <div><label className="lbl">Carrera / Programa</label><input name="carrera" defaultValue={cliente?.carrera || ''} required className="field" /></div>
         </div>
         <div className="mb-4"><label className="lbl">Nivel</label>
-          <select name="nivel" defaultValue={cliente?.nivel || 'Posgrado'} className="field"><option>Posgrado</option><option>Pregrado</option></select>
+          <select name="nivel" defaultValue={cliente?.nivel || prefill?.nivel || 'Posgrado'} className="field"><option>Posgrado</option><option>Pregrado</option></select>
         </div>
 
         <p className="mb-3 border-b border-linea pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-olivo">Contrato</p>
