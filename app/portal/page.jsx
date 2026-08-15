@@ -82,19 +82,22 @@ export default function Portal() {
   async function solicitarCita(e) {
     e.preventDefault();
     const f = e.target;
-    const fechaVal = f.fecha.value;
+    const diaStr = f.fecha.value;
+    const hora = Number(f.hora.value);
     const tema = f.tema.value.trim();
-    const elegido = new Date(fechaVal);
+    if (!diaStr || !hora) { showToast('Elige día y hora.'); return; }
+
+    const elegido = new Date(`${diaStr}T${String(hora).padStart(2, '0')}:00:00`);
     if (elegido < new Date()) { showToast('Elige una fecha futura.'); return; }
-    const diaStr = `${elegido.getFullYear()}-${String(elegido.getMonth() + 1).padStart(2, '0')}-${String(elegido.getDate()).padStart(2, '0')}`;
-    const horaStr = `${String(elegido.getHours()).padStart(2, '0')}:${String(elegido.getMinutes()).padStart(2, '0')}`;
+    if (hora < 8 || hora >= 23) { alert('Ese horario no está disponible. La atención es de 08:00 a 23:00.'); return; }
+
     const sb = getSb();
     const { data: bloqs } = await sb.from('bloqueos').select('*').eq('fecha', diaStr);
     if (bloqs && bloqs.length) {
       const cerrado = bloqs.some((b) => b.todo_el_dia) ||
         bloqs.some((b) => !b.todo_el_dia && b.hora_inicio && b.hora_fin &&
-          horaStr >= b.hora_inicio.slice(0, 5) && horaStr < b.hora_fin.slice(0, 5));
-      if (cerrado) { showToast('Ese día u horario no está disponible. Elige otro.'); return; }
+          hora >= parseInt(b.hora_inicio.slice(0, 2), 10) && hora < parseInt(b.hora_fin.slice(0, 2), 10));
+      if (cerrado) { alert('Ese horario no está disponible. Por favor elige otro.'); return; }
     }
     setGuardando(true);
     const { error } = await sb.from('citas').insert({
@@ -344,9 +347,21 @@ export default function Portal() {
       <Modal open={modalCita} onClose={() => setModalCita(false)} title="Solicitar cita">
         <p className="mb-5 text-sm text-piedra">Propón una fecha y hora; tu asesora la confirmará o te sugerirá otra.</p>
         <form onSubmit={solicitarCita}>
-          <div className="mb-4">
-            <label className="lbl">Fecha y hora tentativa</label>
-            <input name="fecha" type="datetime-local" required className="field" />
+          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="lbl">Día</label>
+              <input name="fecha" type="date" required className="field" />
+            </div>
+            <div>
+              <label className="lbl">Hora (1 hora)</label>
+              <select name="hora" required className="field" defaultValue="">
+                <option value="" disabled>Elige...</option>
+                {Array.from({ length: 15 }).map((_, i) => {
+                  const h = i + 8;
+                  return <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>;
+                })}
+              </select>
+            </div>
           </div>
           <div className="mb-5">
             <label className="lbl">¿Qué quieres discutir?</label>
