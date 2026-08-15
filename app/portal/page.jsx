@@ -163,7 +163,8 @@ export default function Portal() {
   const primerNombre = (cliente.nombre || '').split(/\s+/)[0];
 
   const montoTotal = Number(cliente.monto_total || 0);
-  const totalAbonado = abonos.reduce((s, a) => s + Number(a.monto), 0);
+  const anticipo = Number(cliente.anticipo || 0);
+  const totalAbonado = anticipo + abonos.reduce((s, a) => s + Number(a.monto), 0);
   const pctPagos = montoTotal > 0 ? Math.min(100, Math.round((totalAbonado / montoTotal) * 100)) : 0;
 
   return (
@@ -218,8 +219,14 @@ export default function Portal() {
           <div className="h-1.5 rounded-full bg-salvia">
             <div className="h-1.5 rounded-full bg-olivo-neg transition-all duration-500" style={{ width: `${pctPagos}%` }} />
           </div>
-          {abonos.length > 0 && (
+          {(anticipo > 0 || abonos.length > 0) && (
             <div className="mt-4 space-y-1.5 border-t border-dashed border-linea pt-3">
+              {anticipo > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-piedra">Anticipo (a la firma del contrato)</span>
+                  <span className="font-semibold">{usd(anticipo)}</span>
+                </div>
+              )}
               {abonos.map((a) => (
                 <div key={a.id} className="flex items-center justify-between text-sm">
                   <span className="text-piedra">{fCorta(a.fecha)}{a.nota ? ` · ${a.nota}` : ''}</span>

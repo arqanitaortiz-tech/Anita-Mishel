@@ -300,7 +300,7 @@ export default function Admin() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {listaClientes.map((c) => {
-              const abonado = abonosTodos.filter((a) => a.cliente_id === c.id).reduce((s, a) => s + Number(a.monto), 0);
+              const abonado = Number(c.anticipo || 0) + abonosTodos.filter((a) => a.cliente_id === c.id).reduce((s, a) => s + Number(a.monto), 0);
               const monto = Number(c.monto_total || 0);
               const pct = monto > 0 ? Math.min(100, Math.round((abonado / monto) * 100)) : 0;
               return (
@@ -397,7 +397,8 @@ function AbonosSection({ cliente, abonos, onCambio, notificar, showToast }) {
   const [abMonto, setAbMonto] = useState('');
   const [abNota, setAbNota] = useState('');
   const monto = Number(cliente.monto_total || 0);
-  const total = abonos.reduce((s, a) => s + Number(a.monto), 0);
+  const anticipo = Number(cliente.anticipo || 0);
+  const total = anticipo + abonos.reduce((s, a) => s + Number(a.monto), 0);
   const pct = monto > 0 ? Math.min(100, Math.round((total / monto) * 100)) : 0;
   const fmt = (n) => '$' + Number(n).toFixed(2);
 
@@ -407,7 +408,7 @@ function AbonosSection({ cliente, abonos, onCambio, notificar, showToast }) {
     const { error } = await getSb().from('abonos').insert({
       cliente_id: cliente.id, fecha: abFecha, monto: valor, nota: abNota.trim() || null,
     });
-    if (error) { showToast('Error al registrar el abono.'); return; }
+    if (error) { showToast('Error al registrar el abono: ' + error.message); return; }
     notificar?.('abono', cliente.id, {
       fecha: abFecha, monto: valor,
       totalAbonado: total + valor, montoTotal: monto, saldo: Math.max(0, monto - total - valor),
@@ -451,8 +452,14 @@ function AbonosSection({ cliente, abonos, onCambio, notificar, showToast }) {
           </button>
         </div>
       </div>
-      {abonos.length > 0 && (
+      {(anticipo > 0 || abonos.length > 0) && (
         <div className="max-h-36 space-y-1.5 overflow-y-auto">
+          {anticipo > 0 && (
+            <div className="flex items-center justify-between rounded-lg bg-salvia/40 px-3 py-2 text-sm border border-linea">
+              <span className="text-piedra">Anticipo (a la firma) · se ajusta arriba</span>
+              <b>{fmt(anticipo)}</b>
+            </div>
+          )}
           {abonos.map((a) => (
             <div key={a.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm border border-linea">
               <span className="text-piedra">{fCorta(a.fecha)}{a.nota ? ` · ${a.nota}` : ''}</span>
