@@ -31,6 +31,7 @@ export async function POST(request) {
 
     if (tipo === 'cita') {
       const fecha = new Date(datos.fecha).toLocaleString('es-EC', {
+        timeZone: 'America/Guayaquil',
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
       });
       await enviarCorreo({
