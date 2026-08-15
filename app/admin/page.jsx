@@ -12,6 +12,15 @@ const genClave = () => { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let o = '
 const isoToLocal = (iso) => { const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 const citaISO = (c) => (c.estado === 'confirmada' && c.fecha_confirmada ? c.fecha_confirmada : c.fecha_propuesta);
 const fhCorta = (iso) => new Date(iso).toLocaleString('es-EC', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+function fmtReunion(iso) {
+  const d = new Date(iso);
+  const hora = d.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+  const hoy = new Date(); const man = new Date(Date.now() + 86400000);
+  const mismoDia = (a, b) => a.toDateString() === b.toDateString();
+  if (mismoDia(d, hoy)) return `Hoy · ${hora}`;
+  if (mismoDia(d, man)) return `Mañana · ${hora}`;
+  return d.toLocaleDateString('es-EC', { weekday: 'short', day: 'numeric', month: 'short' }) + ` · ${hora}`;
+}
 
 const MENU = [
   ['resumen', 'Resumen'],
@@ -213,15 +222,18 @@ export default function Admin() {
               </div>
 
               <div className="card p-4">
-                <p className="mb-3 font-display text-sm font-semibold">Próximas citas</p>
+                <p className="mb-3 font-display text-sm font-semibold">Reuniones agendadas</p>
                 {proximas.length === 0 ? (
-                  <p className="text-sm text-piedra">No hay citas confirmadas próximas.</p>
+                  <p className="text-sm text-piedra">No tienes reuniones confirmadas próximas.</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {proximas.map((e) => (
-                      <div key={e.id} className="flex items-center gap-3 text-sm">
-                        <span className="w-24 shrink-0 font-display font-semibold text-piedra">{fhCorta(e.iso)}</span>
-                        <span className="min-w-0 truncate">{e.nombre}</span>
+                      <div key={e.id} className="rounded-lg border-l-[3px] border-l-olivo border border-linea bg-salvia/20 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-semibold">{e.nombre}</span>
+                          <span className="shrink-0 font-display text-xs font-semibold text-olivo-prof">{fmtReunion(e.iso)}</span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-piedra">{e.tema}</p>
                       </div>
                     ))}
                   </div>
