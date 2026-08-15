@@ -105,6 +105,28 @@ export default function Admin() {
     if (error) { showToast('Error al rechazar.'); return; }
     setModalGestion(null); await cargarTodo(); showToast('Solicitud rechazada.');
   }
+  async function realizarCita() {
+    const { error } = await getSb().from('citas').update({ estado: 'realizada' }).eq('id', modalGestion.id);
+    if (error) { showToast('Error al actualizar.'); return; }
+    setModalGestion(null); await cargarTodo(); showToast('Reunión marcada como realizada.');
+  }
+  async function reagendarCita(e) {
+    e.preventDefault();
+    const f = e.target;
+    if (!f.fecha.value) { showToast('Elige la nueva fecha.'); return; }
+    const fechaISO = new Date(f.fecha.value).toISOString();
+    const nota = f.nota.value.trim() || null;
+    const { error } = await getSb().from('citas').update({ estado: 'confirmada', fecha_confirmada: fechaISO, nota_admin: nota }).eq('id', modalGestion.id);
+    if (error) { showToast('Error al reagendar.'); return; }
+    notificar('cita', modalGestion.cliente_id, { fecha: fechaISO, nota: nota ? ('Reagendada. ' + nota) : 'Reagendada.' });
+    setModalGestion(null); await cargarTodo(); showToast('Cita reagendada. Se avisó al cliente.');
+  }
+  async function cancelarCitaAdmin() {
+    if (!confirm('¿Cancelar esta cita?')) return;
+    const { error } = await getSb().from('citas').update({ estado: 'cancelada' }).eq('id', modalGestion.id);
+    if (error) { showToast('Error al cancelar.'); return; }
+    setModalGestion(null); await cargarTodo(); showToast('Cita cancelada.');
+  }
 
   if (!listo) return <Cargando />;
 
@@ -330,30 +352,62 @@ export default function Admin() {
       )}
 
       {/* MODAL GESTIÓN CITA */}
-      <Modal open={!!modalGestion} onClose={() => setModalGestion(null)} title="Gestionar solicitud de cita">
+      <Modal open={!!modalGestion} onClose={() => setModalGestion(null)}
+        title={modalGestion?.estado === 'confirmada' ? 'Reunión confirmada' : 'Gestionar solicitud de cita'}>
         {modalGestion && (
-          <form onSubmit={confirmarCita}>
+          <div>
             <div className="mb-4 rounded-lg bg-salvia/50 px-4 py-3 text-sm">
               <p className="font-semibold">{modalGestion.clientes?.nombre || 'Cliente'}</p>
-              <p className="mt-0.5 text-piedra">Propuesta: {fhCorta(modalGestion.fecha_propuesta)}</p>
+              <p className="mt-0.5 text-piedra">
+                {modalGestion.estado === 'confirmada' ? 'Confirmada' : 'Propuesta'}: {fhCorta(modalGestion.estado === 'confirmada' ? modalGestion.fecha_confirmada : modalGestion.fecha_propuesta)}
+              </p>
               <p className="text-piedra">Tema: {modalGestion.tema}</p>
             </div>
-            <div className="mb-4">
-              <label className="lbl">Fecha y hora confirmada</label>
-              <input name="fecha" type="datetime-local" defaultValue={isoToLocal(modalGestion.fecha_propuesta)} className="field" />
-            </div>
-            <div className="mb-5">
-              <label className="lbl">Nota para el cliente (opcional)</label>
-              <textarea name="nota" rows={2} className="field" placeholder="Ej. Confirmada por videollamada." />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <button type="button" onClick={(e) => rechazarCita(e.target.form?.nota?.value)} className="text-sm text-red-700 underline">Rechazar</button>
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setModalGestion(null)} className="btn-ghost">Cerrar</button>
-                <button className="btn-olivo">Confirmar cita</button>
-              </div>
-            </div>
-          </form>
+
+            {modalGestion.estado === 'pendiente' && (
+              <form onSubmit={confirmarCita}>
+                <div className="mb-4">
+                  <label className="lbl">Fecha y hora confirmada</label>
+                  <input name="fecha" type="datetime-local" defaultValue={isoToLocal(modalGestion.fecha_propuesta)} className="field" />
+                </div>
+                <div className="mb-5">
+                  <label className="lbl">Nota para el cliente (opcional)</label>
+                  <textarea name="nota" rows={2} className="field" placeholder="Ej. Confirmada por videollamada." />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <button type="button" onClick={(ev) => rechazarCita(ev.target.form?.nota?.value)} className="text-sm text-red-700 underline">Rechazar</button>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setModalGestion(null)} className="btn-ghost">Cerrar</button>
+                    <button className="btn-olivo">Confirmar cita</button>
+                  </div>
+                </div>
+              </form>
+            )}
+
+            {modalGestion.estado === 'confirmada' && (
+              <form onSubmit={reagendarCita}>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-olivo">Reagendar</p>
+                <div className="mb-3">
+                  <label className="lbl">Nueva fecha y hora</label>
+                  <input name="fecha" type="datetime-local" defaultValue={isoToLocal(modalGestion.fecha_confirmada || modalGestion.fecha_propuesta)} className="field" />
+                </div>
+                <div className="mb-4">
+                  <label className="lbl">Nota para el cliente (opcional)</label>
+                  <textarea name="nota" rows={2} className="field" placeholder="Motivo del cambio, enlace, etc." />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-linea pt-4">
+                  <div className="flex gap-4">
+                    <button type="button" onClick={realizarCita} className="text-sm font-medium text-olivo-prof underline">Marcar realizada</button>
+                    <button type="button" onClick={cancelarCitaAdmin} className="text-sm text-red-700 underline">Cancelar cita</button>
+                  </div>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setModalGestion(null)} className="btn-ghost">Cerrar</button>
+                    <button className="btn-olivo">Guardar reagendamiento</button>
+                  </div>
+                </div>
+              </form>
+            )}
+          </div>
         )}
       </Modal>
 

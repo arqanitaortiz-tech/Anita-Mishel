@@ -111,11 +111,11 @@ export default function Portal() {
   }
 
   async function cancelarCita(id) {
-    if (!confirm('¿Cancelar esta solicitud de cita?')) return;
-    const { error } = await getSb().from('citas').delete().eq('id', id);
+    if (!confirm('¿Cancelar esta cita? Si necesitas otra, puedes solicitarla de nuevo.')) return;
+    const { error } = await getSb().from('citas').update({ estado: 'cancelada' }).eq('id', id);
     if (error) { showToast('Error al cancelar.'); return; }
     await cargar(cliente.id);
-    showToast('Solicitud cancelada.');
+    showToast('Cita cancelada.');
   }
 
   /* ---------- notas ---------- */
@@ -164,6 +164,7 @@ export default function Portal() {
   const notasPorEntrada = {};
   notas.forEach((n) => { (notasPorEntrada[n.bitacora_id] = notasPorEntrada[n.bitacora_id] || []).push(n); });
   const primerNombre = (cliente.nombre || '').split(/\s+/)[0];
+  const citasActivas = citas.filter((c) => c.estado === 'pendiente' || c.estado === 'confirmada');
 
   const montoTotal = Number(cliente.monto_total || 0);
   const anticipo = Number(cliente.anticipo || 0);
@@ -246,13 +247,13 @@ export default function Portal() {
             <h2 className="font-display text-xl font-semibold">Mis citas</h2>
             <button onClick={() => setModalCita(true)} className="btn-olivo !py-2 text-xs">Solicitar cita</button>
           </div>
-          {citas.length === 0 ? (
+          {citasActivas.length === 0 ? (
             <div className="card border-dashed p-8 text-center text-sm text-piedra">
-              No tienes citas todavía. Solicita una cuando quieras revisar tu proyecto.
+              No tienes citas activas. Solicita una cuando quieras revisar tu proyecto.
             </div>
           ) : (
             <div className="space-y-3">
-              {citas.map((c) => {
+              {citasActivas.map((c) => {
                 const fecha = c.estado === 'confirmada' && c.fecha_confirmada ? c.fecha_confirmada : c.fecha_propuesta;
                 return (
                   <div key={c.id} className="card flex items-start justify-between gap-4 p-4">
@@ -268,7 +269,7 @@ export default function Portal() {
                     </div>
                     <div className="flex flex-col items-end gap-2">
                       <Badge estado={c.estado} />
-                      {c.estado === 'pendiente' && (
+                      {(c.estado === 'pendiente' || c.estado === 'confirmada') && (
                         <button onClick={() => cancelarCita(c.id)} className="text-xs text-piedra underline hover:text-red-700">
                           Cancelar
                         </button>
