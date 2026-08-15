@@ -42,10 +42,10 @@ export async function POST(request) {
     if (cerrado)
       return NextResponse.json({ error: 'Ese horario no está disponible. Por favor elige otro.' }, { status: 409 });
 
-    const { data: fila, error } = await sb.from('consultas').insert({
+    const { error } = await sb.from('consultas').insert({
       nombres, correo, telefono, ciudad, universidad, nivel, tema,
       fecha: cuando.toISOString(), estado: 'nueva',
-    }).select().single();
+    });
     if (error) return NextResponse.json({ error: 'No se pudo agendar: ' + error.message }, { status: 500 });
 
     // Correos
@@ -69,7 +69,7 @@ export async function POST(request) {
       });
     }
 
-    return NextResponse.json({ ok: true, id: fila.id });
+    return NextResponse.json({ ok: true });
   } catch (e) {
     console.error('Error /api/consulta:', e);
     return NextResponse.json({ error: 'Error interno.' }, { status: 500 });
