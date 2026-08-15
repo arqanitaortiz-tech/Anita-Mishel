@@ -21,6 +21,23 @@ export async function POST(request) {
 
     const { tipo, clienteId, datos = {} } = await request.json();
 
+    // Consulta de prospecto: el correo viene directo en datos
+    if (tipo === 'consulta') {
+      if (!datos.correo) return NextResponse.json({ ok: true, omitido: true });
+      const cuando = new Date(datos.fecha).toLocaleString('es-EC', {
+        timeZone: 'America/Guayaquil', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+      });
+      await enviarCorreo({
+        para: datos.correo,
+        asunto: 'Tu consulta fue confirmada · Anita Mishel',
+        html: `<p>Hola <b>${datos.nombre || ''}</b>,</p>
+          <p>Tu consulta fue <b>confirmada</b> para el <b>${cuando}</b>.</p>
+          ${datos.nota ? `<p>Nota: ${datos.nota}</p>` : ''}
+          <p>Te esperamos. Cualquier cambio, escríbenos a info@anitamishel.com.</p>`,
+      });
+      return NextResponse.json({ ok: true });
+    }
+
     // Correo del cliente (del onboarding)
     const { data: ob } = await sb.from('onboarding')
       .select('correo, nombres').eq('cliente_id', clienteId)

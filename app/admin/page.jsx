@@ -56,7 +56,7 @@ export default function Admin() {
       sb.from('citas').select('*, clientes(nombre)').in('estado', ['pendiente', 'confirmada']),
       sb.from('bloqueos').select('*'),
       sb.from('onboarding').select('cliente_id, correo, telefono'),
-      sb.from('consultas').select('*').in('estado', ['nueva', 'atendida']).order('fecha'),
+      sb.from('consultas').select('*').in('estado', ['nueva', 'atendida', 'confirmada']).order('fecha'),
     ]);
     setClientes(cl.data || []);
     setAbonosTodos(ab.data || []);
@@ -133,10 +133,19 @@ export default function Admin() {
     setModalGestion(null); await cargarTodo(); showToast('Cita cancelada.');
   }
 
-  async function atenderConsulta(id) {
-    const { error } = await getSb().from('consultas').update({ estado: 'atendida' }).eq('id', id);
+  async function confirmarConsulta(id, fechaISO, nota) {
+    const upd = { estado: 'confirmada' };
+    if (fechaISO) upd.fecha = fechaISO;
+    const { error } = await getSb().from('consultas').update(upd).eq('id', id);
     if (error) { showToast('Error.'); return; }
-    setModalConsulta(null); await cargarTodo(); showToast('Consulta marcada como atendida.');
+    const c = consultas.find((x) => x.id === id);
+    notificar('consulta', null, { correo: c?.correo, nombre: c?.nombres, fecha: fechaISO || c?.fecha, nota });
+    setModalConsulta(null); await cargarTodo(); showToast('Consulta confirmada. Se avisó al prospecto.');
+  }
+  async function realizarConsulta(id) {
+    const { error } = await getSb().from('consultas').update({ estado: 'realizada' }).eq('id', id);
+    if (error) { showToast('Error.'); return; }
+    setModalConsulta(null); await cargarTodo(); showToast('Consulta marcada como realizada.');
   }
   async function cancelarConsulta(id) {
     if (!confirm('¿Cancelar esta consulta?')) return;
@@ -192,7 +201,7 @@ export default function Admin() {
     abonosTodos.filter((a) => enEsteMes(a.fecha)).reduce((s, a) => s + Number(a.monto), 0) +
     clientes.filter((c) => enEsteMes(c.fecha_inicio)).reduce((s, c) => s + Number(c.anticipo || 0), 0);
   const proximas = eventos
-    .filter((e) => new Date(e.iso) >= hoy && ((e.tipo === 'cliente' && e.estado === 'confirmada') || (e.tipo === 'prospecto' && e.estado === 'atendida')))
+    .filter((e) => new Date(e.iso) >= hoy && e.estado === 'confirmada')
     .sort((a, b) => (a.iso < b.iso ? -1 : 1)).slice(0, 5);
   const cobros = clientes
     .filter((c) => (c.estado || 'activo') === 'activo' && Number(c.monto_total || 0) > 0)
@@ -370,8 +379,8 @@ export default function Admin() {
                   <button key={c.id} onClick={() => setModalConsulta(c)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:border-olivo hover:shadow-md">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="text-sm font-semibold">{c.nombres}</span>
-                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ${c.estado === 'atendida' ? 'bg-salvia text-olivo-prof' : 'bg-terracotta/20 text-[#9C5A42]'}`}>
-                        {c.estado === 'atendida' ? 'Atendida' : 'Nueva'}
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ${c.estado === 'confirmada' ? 'bg-olivo text-white' : 'bg-terracotta/20 text-[#9C5A42]'}`}>
+                        {c.estado === 'confirmada' ? 'Confirmada' : 'Nueva'}
                       </span>
                     </div>
                     <p className="text-xs text-piedra">{c.ciudad} · {c.universidad} · {c.nivel}</p>
@@ -415,22 +424,30 @@ export default function Admin() {
       {/* MODAL CONSULTA (PROSPECTO) */}
       <Modal open={!!modalConsulta} onClose={() => setModalConsulta(null)} title="Consulta de prospecto">
         {modalConsulta && (
-          <div>
+          <form onSubmit={(e) => { e.preventDefault(); confirmarConsulta(modalConsulta.id, new Date(e.target.fecha.value).toISOString(), e.target.nota.value.trim() || null); }}>
             <div className="mb-4 space-y-1 rounded-lg bg-salvia/50 px-4 py-3 text-sm">
-              <p className="font-semibold">{modalConsulta.nombres}</p>
+              <p className="font-semibold">{modalConsulta.nombres} {modalConsulta.estado === 'confirmada' && <span className="ml-1 rounded-full bg-olivo px-2 py-0.5 text-[10px] font-semibold uppercase text-white">Confirmada</span>}</p>
               <p className="text-piedra">{modalConsulta.ciudad} · {modalConsulta.universidad} · {modalConsulta.nivel}</p>
               <p className="text-piedra">Correo: {modalConsulta.correo} · Tel: {modalConsulta.telefono}</p>
-              <p className="text-piedra">Fecha propuesta: {fhCorta(modalConsulta.fecha)}</p>
               <p className="text-piedra">Tema: {modalConsulta.tema}</p>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-linea pt-4">
-              <div className="flex gap-4">
-                {modalConsulta.estado !== 'atendida' && <button onClick={() => atenderConsulta(modalConsulta.id)} className="text-sm font-medium text-olivo-prof underline">Marcar atendida</button>}
-                <button onClick={() => cancelarConsulta(modalConsulta.id)} className="text-sm text-red-700 underline">Cancelar</button>
-              </div>
-              <button onClick={() => convertirConsulta(modalConsulta)} className="btn-olivo">Convertir en cliente</button>
+            <div className="mb-3">
+              <label className="lbl">{modalConsulta.estado === 'confirmada' ? 'Reagendar a' : 'Confirmar para'}</label>
+              <input name="fecha" type="datetime-local" defaultValue={isoToLocal(modalConsulta.fecha)} className="field" />
             </div>
-          </div>
+            <div className="mb-4">
+              <label className="lbl">Nota para el prospecto (opcional)</label>
+              <textarea name="nota" rows={2} className="field" placeholder="Enlace de la videollamada, indicaciones..." />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-linea pt-4">
+              <div className="flex flex-wrap gap-4">
+                {modalConsulta.estado === 'confirmada' && <button type="button" onClick={() => realizarConsulta(modalConsulta.id)} className="text-sm font-medium text-olivo-prof underline">Marcar realizada</button>}
+                <button type="button" onClick={() => convertirConsulta(modalConsulta)} className="text-sm font-medium text-olivo-prof underline">Convertir en cliente</button>
+                <button type="button" onClick={() => cancelarConsulta(modalConsulta.id)} className="text-sm text-red-700 underline">Cancelar</button>
+              </div>
+              <button className="btn-olivo">{modalConsulta.estado === 'confirmada' ? 'Reagendar' : 'Confirmar'}</button>
+            </div>
+          </form>
         )}
       </Modal>
 
