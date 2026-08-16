@@ -184,7 +184,7 @@ function PanelInfo({ tipo, onClose }) {
             <>
               <p className="mb-5 text-sm text-piedra">Sigue a Anita para consejos, novedades y contenido sobre tu proceso de tesis.</p>
               <div className="grid grid-cols-3 gap-3">
-                {[['ti-brand-facebook', 'Facebook', '#'], ['ti-brand-instagram', 'Instagram', '#'], ['ti-brand-tiktok', 'TikTok', '#']].map(([ic, t, url]) => (
+                {[['ti-brand-facebook', 'Facebook', 'https://www.facebook.com/anita.ortiz.5059'], ['ti-brand-instagram', 'Instagram', 'https://www.instagram.com/nena9120022017'], ['ti-brand-tiktok', 'TikTok', 'https://www.tiktok.com/@anitaortiz1991ov']].map(([ic, t, url]) => (
                   <a key={t} href={url} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-2 rounded-xl border border-linea bg-white py-5 transition hover:border-olivo hover:bg-salvia/40">
                     <i className={`ti ${ic} text-2xl text-olivo-prof`} />
                     <span className="text-xs font-medium">{t}</span>
