@@ -16,6 +16,7 @@ export default function RootLayout({ children }) {
     <html lang="es" className={`${display.variable} ${sans.variable}`}>
       <head>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" />
+        <link href="https://fonts.googleapis.com/css2?family=Sacramento&display=swap" rel="stylesheet" />
       </head>
       <body>{children}</body>
     </html>

@@ -56,7 +56,7 @@ export default function Home() {
 
         {/* HERO centro */}
         <main className="order-1 flex flex-1 items-center justify-center px-6 py-6 sm:order-2 sm:px-10">
-          <div className="flex w-full max-w-4xl flex-col items-center gap-8 sm:flex-row sm:gap-14">
+          <div className="flex w-full max-w-5xl flex-col items-center gap-8 sm:flex-row sm:gap-16">
             <div className="order-2 flex-1 text-center sm:order-1 sm:text-left">
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[2.5px] text-olivo-prof">Arquitecta urbanista · Asesora académica</p>
               <h1 className="font-display text-5xl font-semibold leading-[1] tracking-tight sm:text-6xl">Anita Mishel</h1>
@@ -75,9 +75,10 @@ export default function Home() {
                 ))}
               </div>
             </div>
-            <div className="order-1 w-56 shrink-0 sm:order-2 sm:w-72">
+            <div className="order-1 w-64 shrink-0 sm:order-2 sm:w-[26rem] lg:w-[30rem]">
               <div className="relative">
-                <img src="/anita/hero.jpg" alt="Anita Mishel, asesora académica" className="w-full rounded-3xl border border-linea object-cover shadow-lg" style={{ aspectRatio: '4/5' }} />
+                <div aria-hidden className="absolute -inset-3 -z-10 rounded-[2rem] bg-salvia/50" />
+                <img src="/anita/hero.jpg" alt="Anita Mishel, asesora académica" className="w-full rounded-3xl border border-linea object-cover shadow-xl" style={{ aspectRatio: '4/5' }} />
                 <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-tinta px-4 py-1.5 text-xs font-medium text-papel shadow-md sm:left-6 sm:translate-x-0">Arq. Urb. Anita Mishel</span>
               </div>
             </div>
@@ -95,9 +96,20 @@ export default function Home() {
         </nav>
       </div>
 
-      {/* footer solo desktop */}
-      <footer className="pointer-events-none absolute bottom-1 left-0 right-0 z-10 hidden text-center text-[11px] text-piedra sm:left-[104px] sm:right-[72px] sm:block">
-        Arq. Urb. Anita Mishel · Asesoría Académica · Ecuador
+      {/* footer con vida */}
+      <footer className="relative z-10 flex flex-wrap items-center justify-between gap-3 bg-tinta px-5 py-2.5 text-papel sm:ml-[104px] sm:mr-[72px] sm:rounded-t-2xl sm:px-7">
+        <span className="flex items-center gap-2.5">
+          <LogoAM dark size={22} plan={false} />
+          <span className="text-xs">
+            <span className="font-display font-semibold">Arq. Urb. Anita Mishel</span>
+            <span className="text-salvia-neg"> · Asesoría Académica · Ecuador</span>
+          </span>
+        </span>
+        <span className="flex items-center gap-2">
+          <a href={WA} target="_blank" rel="noopener noreferrer" aria-label="WhatsApp" className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-papel/80 transition hover:bg-olivo hover:text-white"><i className="ti ti-brand-whatsapp text-base" /></a>
+          <a href="mailto:info@anitamishel.com" aria-label="Correo" className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-papel/80 transition hover:bg-olivo hover:text-white"><i className="ti ti-mail text-base" /></a>
+          <button onClick={() => setPanel('redes')} aria-label="Redes" className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-papel/80 transition hover:bg-olivo hover:text-white"><i className="ti ti-share text-base" /></button>
+        </span>
       </footer>
 
       {/* ===== OVERLAY DE FACETA ===== */}
@@ -145,8 +157,10 @@ function FacetaOverlay({ faceta, onClose, onAgendar }) {
           </div>
           {faceta.voz && <p className="mb-4 font-display text-xl font-medium leading-snug tracking-tight sm:text-[22px]">{faceta.voz}</p>}
           <div className="flex-1">{faceta.contenido}</div>
-          <div className="mt-6 flex items-end justify-between gap-4">
-            <img src="/firma-anita.png" alt="Firma de Anita Mishel" className="h-12 w-auto opacity-90" />
+          <div className="mt-6 flex items-end justify-between gap-4 border-t border-linea pt-4">
+            <div className="leading-none">
+              <span className="text-[38px] text-olivo-prof" style={{ fontFamily: 'Sacramento, cursive' }}>Anita Mishel</span>
+            </div>
             <button onClick={onAgendar} className="btn-olivo shrink-0 gap-2"><i className="ti ti-calendar-plus" /> Agendar</button>
           </div>
         </div>
