@@ -141,8 +141,8 @@ function FacetaOverlay({ faceta, onClose, onAgendar }) {
     <FondoMarca>
       <div className="relative z-10 flex max-h-[90dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-papel shadow-2xl sm:flex-row" onClick={(e) => e.stopPropagation()}>
         {/* foto */}
-        <div className="relative h-44 shrink-0 sm:h-auto sm:w-2/5">
-          <img src={faceta.img} alt={faceta.label} className="h-full w-full object-cover" />
+        <div className="relative h-60 shrink-0 sm:h-auto sm:w-2/5">
+          <img src={faceta.img} alt={faceta.label} className="h-full w-full object-cover object-top sm:object-center" />
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-tinta/85 to-transparent p-4">
             <p className="font-display text-[15px] font-semibold text-papel">Anita Mishel</p>
             <p className="text-[11px] text-salvia-neg">Arquitecta urbanista · Asesora académica</p>
