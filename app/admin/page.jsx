@@ -203,10 +203,24 @@ export default function Admin() {
   const proximas = eventos
     .filter((e) => new Date(e.iso) >= hoy && e.estado === 'confirmada')
     .sort((a, b) => (a.iso < b.iso ? -1 : 1)).slice(0, 5);
-  const cobros = clientes
+  const finanzas = clientes
     .filter((c) => (c.estado || 'activo') === 'activo' && Number(c.monto_total || 0) > 0)
-    .map((c) => ({ id: c.id, nombre: c.nombre, abonado: abonadoDe(c.id), monto: Number(c.monto_total), saldo: Number(c.monto_total) - abonadoDe(c.id) }))
-    .filter((x) => x.saldo > 0.005).sort((a, b) => b.saldo - a.saldo).slice(0, 6);
+    .map((c) => {
+      const monto = Number(c.monto_total || 0);
+      const extras = Number(c.extras || 0);
+      const total = monto + extras;
+      const pagado = abonadoDe(c.id);
+      const saldo = total - pagado;
+      const avance = Number(c.avance_tesis || 0);
+      const pctPago = total > 0 ? (pagado / total) * 100 : 0;
+      let tono;
+      if (avance >= 100 && saldo > 0.005) tono = 'rojo';
+      else if (avance > pctPago + 0.5) tono = 'amarillo';
+      else tono = 'verde';
+      return { id: c.id, nombre: c.nombre, monto, extras, total, pagado, saldo, avance, tono };
+    })
+    .sort((a, b) => b.saldo - a.saldo);
+  const tonoBg = { verde: 'bg-[#6B7B5E]/[0.09]', amarillo: 'bg-amber-100/70', rojo: 'bg-red-100/70' };
   const usd0 = (n) => '$' + Math.round(Number(n || 0)).toLocaleString('es-EC');
 
   const f = filtro.trim().toLowerCase();
@@ -302,24 +316,44 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Cobros pendientes */}
-            <div className="card mt-4 p-4">
-              <p className="mb-3 font-display text-sm font-semibold">Cobros pendientes</p>
-              {cobros.length === 0 ? (
-                <p className="text-sm text-piedra">Todos los clientes activos están al día.</p>
+            {/* Estado de cobros por cliente */}
+            <div className="card mt-4 overflow-x-auto p-4">
+              <p className="mb-3 font-display text-sm font-semibold">Estado de cobros por cliente</p>
+              {finanzas.length === 0 ? (
+                <p className="text-sm text-piedra">No hay clientes activos con monto acordado.</p>
               ) : (
-                <table className="w-full text-sm">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="border-b border-linea text-left text-[11px] uppercase tracking-wide text-piedra">
+                      <th className="py-2 pr-3 font-medium">Cliente</th>
+                      <th className="px-2 py-2 text-right font-medium">Monto acordado</th>
+                      <th className="px-2 py-2 text-right font-medium">Anticipo</th>
+                      <th className="px-2 py-2 text-right font-medium">Extras</th>
+                      <th className="px-2 py-2 text-right font-medium">Total</th>
+                      <th className="px-2 py-2 text-right font-medium">Saldo pendiente</th>
+                      <th className="pl-2 py-2 text-right font-medium">% Avance</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {cobros.map((c) => (
-                      <tr key={c.id} className="border-b border-linea last:border-0">
-                        <td className="py-2 font-medium">{c.nombre}</td>
-                        <td className="py-2 text-piedra">{usd0(c.abonado)} de {usd0(c.monto)}</td>
-                        <td className="py-2 text-right font-semibold text-[#9C5A42]">Debe {usd0(c.saldo)}</td>
+                    {finanzas.map((r) => (
+                      <tr key={r.id} className={`border-b border-linea last:border-0 ${tonoBg[r.tono]}`}>
+                        <td className="py-2 pr-3 font-medium">{r.nombre}</td>
+                        <td className="px-2 py-2 text-right">{usd0(r.monto)}</td>
+                        <td className="px-2 py-2 text-right">{usd0(r.pagado)}</td>
+                        <td className="px-2 py-2 text-right">{r.extras > 0 ? usd0(r.extras) : '—'}</td>
+                        <td className="px-2 py-2 text-right font-semibold">{usd0(r.total)}</td>
+                        <td className="px-2 py-2 text-right font-semibold text-[#9C5A42]">{r.saldo > 0.005 ? usd0(r.saldo) : '$0'}</td>
+                        <td className="pl-2 py-2 text-right font-semibold">{Math.round(r.avance)}%</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               )}
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-piedra">
+                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-[#6B7B5E]/[0.09] ring-1 ring-linea" />Pagos al día</span>
+                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-100/70 ring-1 ring-linea" />Avance por delante del pago</span>
+                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100/70 ring-1 ring-linea" />Tesis lista, saldo pendiente</span>
+              </div>
             </div>
           </div>
         )}
@@ -566,6 +600,7 @@ function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar
       fecha_inicio: f.fechainicio.value || null,
       monto_total: f.monto.value ? Number(f.monto.value) : null,
       anticipo: f.anticipo.value ? Number(f.anticipo.value) : 0,
+      extras: f.extras.value ? Number(f.extras.value) : 0,
       contrato_tipo: f.contratotipo.value,
     };
     if (!base.nombre || !base.universidad || !base.carrera) { showToast('Completa nombre, universidad y carrera.'); return; }
@@ -653,10 +688,11 @@ function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar
         </div>
 
         <p className="mb-3 border-b border-linea pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-olivo">Contrato</p>
-        <div className="mb-4 grid gap-4 sm:grid-cols-3">
+        <div className="mb-4 grid gap-4 sm:grid-cols-2">
           <div><label className="lbl">Fecha de inicio</label><input name="fechainicio" type="date" defaultValue={cliente?.fecha_inicio || ''} className="field" /></div>
           <div><label className="lbl">Monto total (USD)</label><input name="monto" type="number" step="0.01" min="0" defaultValue={cliente?.monto_total ?? ''} className="field" placeholder="300" /></div>
           <div><label className="lbl">Anticipo (USD)</label><input name="anticipo" type="number" step="0.01" min="0" defaultValue={cliente?.anticipo ?? ''} className="field" placeholder="150" /></div>
+          <div><label className="lbl">Extras (USD)</label><input name="extras" type="number" step="0.01" min="0" defaultValue={cliente?.extras ?? ''} className="field" placeholder="0" /></div>
         </div>
         <div className="mb-4"><label className="lbl">Firma del contrato</label>
           <select name="contratotipo" defaultValue={cliente?.contrato_tipo || 'digital'} className="field">
