@@ -224,8 +224,8 @@ export default function Admin() {
   const usd0 = (n) => '$' + Math.round(Number(n || 0)).toLocaleString('es-EC');
 
   const f = filtro.trim().toLowerCase();
-  const listaClientes = clientes.filter((c) => !f ||
-    (c.nombre || '').toLowerCase().includes(f) || (c.universidad || '').toLowerCase().includes(f) || (c.carrera || '').toLowerCase().includes(f));
+  const listaClientes = clientes.filter((c) => (c.estado || 'activo') === 'activo' && (!f ||
+    (c.nombre || '').toLowerCase().includes(f) || (c.universidad || '').toLowerCase().includes(f) || (c.carrera || '').toLowerCase().includes(f)));
 
   function onGestionar(ev) {
     if (ev.tipo === 'cliente') setModalGestion(ev.raw);
@@ -376,23 +376,31 @@ export default function Admin() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {listaClientes.map((c) => {
-                  const abonado = abonadoDe(c.id); const monto = Number(c.monto_total || 0);
-                  const pct = monto > 0 ? Math.min(100, Math.round((abonado / monto) * 100)) : 0;
-                  const terminado = c.estado === 'terminado';
+                  const abonado = abonadoDe(c.id);
+                  const monto = Number(c.monto_total || 0);
+                  const extras = Number(c.extras || 0);
+                  const total = monto + extras;
+                  const pct = total > 0 ? Math.min(100, Math.round((abonado / total) * 100)) : 0;
+                  const avance = Number(c.avance_tesis || 0);
+                  const pctPago = total > 0 ? (abonado / total) * 100 : 0;
+                  const saldo = total - abonado;
+                  let bg = 'rgba(107,123,94,0.10)';
+                  if (avance >= 100 && saldo > 0.005) bg = 'rgba(220,38,38,0.12)';
+                  else if (total > 0 && avance > pctPago + 0.5) bg = 'rgba(251,191,36,0.16)';
                   return (
-                    <button key={c.id} onClick={() => setModalCliente(c)} className="card p-5 text-left transition hover:-translate-y-0.5 hover:border-olivo hover:shadow-md">
+                    <button key={c.id} onClick={() => setModalCliente(c)} style={{ backgroundColor: bg }} className="card p-5 text-left transition hover:-translate-y-0.5 hover:border-olivo hover:shadow-md">
                       <div className="mb-4 flex items-center gap-3">
                         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-olivo text-sm font-semibold text-white">{iniciales(c.nombre)}</span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-semibold">{c.nombre}</span>
                           <span className="block truncate text-xs text-piedra">{[c.universidad, c.carrera].filter(Boolean).join(' · ')}</span>
                         </span>
-                        <span className={`ml-auto shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase ${terminado ? 'bg-[#EDECE8] text-piedra' : 'bg-salvia text-olivo-prof'}`}>
-                          {terminado ? 'Terminado' : (c.nivel || 'Posgrado')}
+                        <span className="ml-auto shrink-0 rounded-full bg-salvia px-2.5 py-0.5 text-[10px] font-semibold uppercase text-olivo-prof">
+                          {c.nivel || 'Posgrado'}
                         </span>
                       </div>
                       <MiniAvance label="Elaboración de tesis" v={c.avance_tesis} color="bg-olivo" />
-                      <div className="mt-3"><MiniAvance label={monto > 0 ? `Pagos · $${abonado.toFixed(0)} de $${monto.toFixed(0)}` : 'Pagos · sin definir'} v={pct} color="bg-olivo-neg" /></div>
+                      <div className="mt-3"><MiniAvance label={total > 0 ? `Pagos · $${abonado.toFixed(0)} de $${total.toFixed(0)}` : 'Pagos · sin definir'} v={pct} color="bg-olivo-neg" /></div>
                     </button>
                   );
                 })}
@@ -588,7 +596,9 @@ function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar
   const anticipo = Number(cliente?.anticipo || 0);
   const totalAbonado = anticipo + abonos.reduce((s, a) => s + Number(a.monto), 0);
   const montoTotal = Number(cliente?.monto_total || 0);
-  const pagosCompletos = montoTotal > 0 && totalAbonado >= montoTotal;
+  const extrasContrato = Number(cliente?.extras || 0);
+  const totalContrato = montoTotal + extrasContrato;
+  const pagosCompletos = totalContrato > 0 && totalAbonado >= totalContrato;
   const terminado = cliente?.estado === 'terminado';
 
   async function guardar(e) {
@@ -671,9 +681,7 @@ function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar
       {esEdicion && (
         <div className="mb-4 flex items-center justify-between rounded-lg bg-salvia/40 px-4 py-2.5">
           <span className="text-sm">Estado: <b>{terminado ? 'Terminado' : 'Activo'}</b></span>
-          {terminado
-            ? <button type="button" onClick={reactivar} className="text-xs font-medium text-olivo-prof underline">Reactivar</button>
-            : <button type="button" onClick={marcarTerminado} className={`text-xs font-medium underline ${tesis === 100 && pagosCompletos ? 'text-olivo-prof' : 'text-piedra'}`} title="Requiere tesis y pagos al 100%">Marcar como terminado</button>}
+          {terminado && <button type="button" onClick={reactivar} className="text-xs font-medium text-olivo-prof underline">Reactivar</button>}
         </div>
       )}
       <form onSubmit={guardar}>
@@ -767,7 +775,16 @@ function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar
         )}
 
         <div className="flex items-center justify-between gap-3 border-t border-linea pt-4">
-          {esEdicion ? <button type="button" onClick={eliminar} className="text-sm text-red-700 underline">Eliminar cliente</button> : <span />}
+          <div className="flex flex-wrap items-center gap-4">
+            {esEdicion && <button type="button" onClick={eliminar} className="text-sm text-red-700 underline">Eliminar cliente</button>}
+            {esEdicion && !terminado && (
+              <button type="button" onClick={marcarTerminado} disabled={!(tesis === 100 && pagosCompletos)}
+                title="Requiere tesis y pagos al 100%"
+                className="rounded-lg border border-olivo-prof px-3 py-1.5 text-sm font-medium text-olivo-prof transition enabled:hover:bg-olivo-prof enabled:hover:text-white disabled:cursor-not-allowed disabled:opacity-40">
+                Terminar proceso → historial
+              </button>
+            )}
+          </div>
           <div className="flex gap-3">
             <button type="button" onClick={onClose} className="btn-ghost">Cancelar</button>
             <button className="btn-olivo" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</button>
