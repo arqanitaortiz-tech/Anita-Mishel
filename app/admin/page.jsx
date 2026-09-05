@@ -27,6 +27,7 @@ const MENU = [
   ['clientes', 'Clientes'],
   ['consultas', 'Consultas'],
   ['calendario', 'Calendario'],
+  ['testimonios', 'Testimonios'],
   ['basedatos', 'Base de datos'],
 ];
 
@@ -42,6 +43,7 @@ export default function Admin() {
   const [citas, setCitas] = useState([]);
   const [bloqueos, setBloqueos] = useState([]);
   const [consultas, setConsultas] = useState([]);
+  const [testimonios, setTestimonios] = useState([]);
 
   const [modalCliente, setModalCliente] = useState(null);
   const [modalGestion, setModalGestion] = useState(null);
@@ -50,19 +52,21 @@ export default function Admin() {
 
   const cargarTodo = useCallback(async () => {
     const sb = getSb();
-    const [cl, ab, ci, bl, ob, co] = await Promise.all([
+    const [cl, ab, ci, bl, ob, co, te] = await Promise.all([
       sb.from('clientes').select('*').order('creado', { ascending: false }),
       sb.from('abonos').select('*'),
       sb.from('citas').select('*, clientes(nombre)').in('estado', ['pendiente', 'confirmada']),
       sb.from('bloqueos').select('*'),
       sb.from('onboarding').select('cliente_id, correo, telefono'),
       sb.from('consultas').select('*').in('estado', ['nueva', 'atendida', 'confirmada']).order('fecha'),
+      sb.from('testimonios').select('*, clientes(nombre, carrera, nivel)').order('creado', { ascending: false }),
     ]);
     setClientes(cl.data || []);
     setAbonosTodos(ab.data || []);
     setCitas(ci.data || []);
     setBloqueos(bl.data || []);
     setConsultas(co.data || []);
+    setTestimonios(te.data || []);
     const map = {};
     (ob.data || []).forEach((o) => { map[o.cliente_id] = { correo: o.correo, telefono: o.telefono }; });
     setContactos(map);
@@ -442,6 +446,14 @@ export default function Admin() {
           </div>
         )}
 
+        {seccion === 'testimonios' && (
+          <div>
+            <h1 className="font-display text-2xl font-semibold tracking-tight">Testimonios</h1>
+            <p className="mt-1 mb-6 text-sm text-piedra">Revisa las reseñas que dejan los clientes, edítalas y publícalas. En la web solo se muestra el nombre de pila y la profesión.</p>
+            <TestimoniosAdmin lista={testimonios} onRefrescar={cargarTodo} showToast={showToast} />
+          </div>
+        )}
+
         {seccion === 'basedatos' && (
           <div>
             <h1 className="mb-6 font-display text-2xl font-semibold tracking-tight">Base de datos</h1>
@@ -568,6 +580,102 @@ function MiniAvance({ label, v, color }) {
 }
 
 /* ============================================================
+   TESTIMONIOS — revisión y publicación
+   ============================================================ */
+function TestimoniosAdmin({ lista, onRefrescar, showToast }) {
+  const pend = lista.filter((t) => t.estado === 'pendiente');
+  const pub = lista.filter((t) => t.estado === 'publicado');
+  const rech = lista.filter((t) => t.estado === 'rechazado');
+
+  if (lista.length === 0) {
+    return (
+      <div className="card border-dashed p-12 text-center">
+        <p className="font-display text-lg font-semibold">Aún no hay testimonios</p>
+        <p className="mt-1 text-sm text-piedra">Cuando termines el proceso de un cliente, recibirá un correo para dejar su reseña y aparecerá aquí.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-8">
+      <GrupoTestimonios titulo="Por revisar" color="text-[#9C5A42]" items={pend} vacio="Nada por revisar." onRefrescar={onRefrescar} showToast={showToast} />
+      <GrupoTestimonios titulo="Publicados" color="text-olivo-prof" items={pub} vacio="Aún no has publicado ninguno." onRefrescar={onRefrescar} showToast={showToast} />
+      {rech.length > 0 && (
+        <GrupoTestimonios titulo="Rechazados" color="text-piedra" items={rech} vacio="" onRefrescar={onRefrescar} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+function GrupoTestimonios({ titulo, color, items, vacio, onRefrescar, showToast }) {
+  return (
+    <div>
+      <p className={`mb-3 font-display text-sm font-semibold ${color}`}>{titulo} <span className="text-piedra">({items.length})</span></p>
+      {items.length === 0 ? (
+        vacio ? <p className="text-sm text-piedra">{vacio}</p> : null
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {items.map((t) => <TarjetaTestimonio key={t.id} t={t} onRefrescar={onRefrescar} showToast={showToast} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TarjetaTestimonio({ t, onRefrescar, showToast }) {
+  const nombreCli = t.clientes?.nombre || '';
+  const carreraCli = t.clientes?.carrera || t.clientes?.nivel || '';
+  const [texto, setTexto] = useState(t.texto || '');
+  const [nombre, setNombre] = useState(t.nombre_pila || nombreCli.split(/\s+/)[0] || '');
+  const [profesion, setProfesion] = useState(t.profesion || carreraCli || '');
+  const [ocupado, setOcupado] = useState(false);
+
+  async function accion(cambios, msg) {
+    if (!texto.trim()) { showToast('El testimonio no puede quedar vacío.'); return; }
+    setOcupado(true);
+    const { error } = await getSb().from('testimonios')
+      .update({ texto: texto.trim(), nombre_pila: nombre.trim(), profesion: profesion.trim(), ...cambios })
+      .eq('id', t.id);
+    setOcupado(false);
+    if (error) { showToast('Error al guardar.'); return; }
+    await onRefrescar();
+    showToast(msg);
+  }
+
+  return (
+    <div className="card p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className="text-xs text-piedra">Cliente: <b className="text-tinta">{nombreCli || '—'}</b></span>
+        <span className="text-[11px] text-piedra">{fCorta(String(t.creado).slice(0, 10))}</span>
+      </div>
+      <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={4} className="field mb-3 text-[13.5px] leading-snug" />
+      <div className="mb-4 grid grid-cols-2 gap-3">
+        <div><label className="lbl">Nombre a mostrar</label><input value={nombre} onChange={(e) => setNombre(e.target.value)} className="field" placeholder="Nombre de pila" /></div>
+        <div><label className="lbl">Profesión</label><input value={profesion} onChange={(e) => setProfesion(e.target.value)} className="field" placeholder="Ej. Maestría en Educación" /></div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        {t.estado === 'pendiente' && (
+          <>
+            <button disabled={ocupado} onClick={() => accion({ estado: 'publicado', publicado_en: new Date().toISOString() }, 'Testimonio publicado.')} className="btn-olivo !py-2 text-xs">Publicar</button>
+            <button disabled={ocupado} onClick={() => accion({ estado: 'rechazado' }, 'Testimonio rechazado.')} className="text-xs text-red-700 underline">Rechazar</button>
+            <button disabled={ocupado} onClick={() => accion({}, 'Cambios guardados.')} className="text-xs text-piedra underline">Guardar cambios</button>
+          </>
+        )}
+        {t.estado === 'publicado' && (
+          <>
+            <span className="rounded-full bg-salvia px-2.5 py-0.5 text-[10px] font-semibold uppercase text-olivo-prof">Publicado</span>
+            <button disabled={ocupado} onClick={() => accion({}, 'Cambios guardados.')} className="btn-ghost !py-2 text-xs">Guardar cambios</button>
+            <button disabled={ocupado} onClick={() => accion({ estado: 'pendiente', publicado_en: null }, 'Retirado de la web.')} className="text-xs text-red-700 underline">Quitar de la web</button>
+          </>
+        )}
+        {t.estado === 'rechazado' && (
+          <button disabled={ocupado} onClick={() => accion({ estado: 'pendiente' }, 'Enviado de nuevo a revisión.')} className="text-xs text-olivo-prof underline">Reconsiderar</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    MODAL CREAR / EDITAR CLIENTE
    ============================================================ */
 function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar, notificar, showToast }) {
@@ -642,7 +750,8 @@ function ModalCliente({ cliente, clientes, prefill, onClose, onDone, onRefrescar
     if (!pagosCompletos) { showToast('Los pagos deben estar completos (100%).'); return; }
     const { error } = await getSb().from('clientes').update({ estado: 'terminado', avance_tesis: 100 }).eq('id', cliente.id);
     if (error) { showToast('Error al actualizar.'); return; }
-    onDone('Cliente marcado como terminado.');
+    notificar?.('agradecimiento', cliente.id, {});
+    onDone('Proceso terminado. Enviamos el correo de agradecimiento y pasó al historial.');
   }
   async function reactivar() {
     const { error } = await getSb().from('clientes').update({ estado: 'activo' }).eq('id', cliente.id);

@@ -69,6 +69,21 @@ export async function POST(request) {
           · Saldo: <b>USD $${Number(datos.saldo).toFixed(2)}</b>.</p>
           <p>Gracias por tu pago. El detalle completo está en tu espacio de la plataforma.</p>`,
       });
+    } else if (tipo === 'agradecimiento') {
+      await enviarCorreo({
+        para: destino,
+        asunto: '¡Lo lograste! Gracias por confiar en nosotros · Anita Mishel',
+        html: `<p>Hola <b>${nombre}</b>,</p>
+          <p>¡Felicitaciones por culminar tu proceso! Fue un honor acompañarte hasta la meta.</p>
+          <p>Nos encantaría pedirte un último favor: en <b>pocas líneas</b>, cuéntanos cómo fue tu
+          experiencia trabajando con nosotros. Tu testimonio ayuda a otras personas que hoy están
+          donde tú empezaste.</p>
+          <p>Puedes dejarlo directamente en tu espacio de la plataforma:</p>
+          <p><a href="https://anitamishel.com/portal" style="display:inline-block;background:#46543C;color:#fff;
+          text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">Compartir mi experiencia</a></p>
+          <p style="color:#666;font-size:13px">Si lo publicamos, solo aparecerá tu nombre de pila y tu profesión.
+          Con todo nuestro cariño, gracias. — Anita Mishel.</p>`,
+      });
     } else {
       return NextResponse.json({ error: 'Tipo desconocido.' }, { status: 400 });
     }

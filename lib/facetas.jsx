@@ -1,6 +1,50 @@
 'use client';
 /* Contenido de las 5 facetas del front page.
    Cada una: color de acento, línea de voz y contenido con vida. */
+import { useState, useEffect } from 'react';
+import { getSb } from './supabase';
+
+const EJEMPLOS_TESTIMONIOS = [
+  ['Trabajo de lunes a sábado y tenía miedo de no terminar la maestría. Con Anita organicé mis tiempos y hoy ya tengo mi tesis aprobada.', 'Carlos R.', 'MBA', 'CR'],
+  ['La calma con la que me guió fue lo que más me ayudó. Nunca me sentí juzgada por mis dudas.', 'María F.', 'Maestría en Educación', 'MF'],
+  ['Llevaba dos años estancado. En cuatro meses con Anita logré lo que no había podido en dos años.', 'Andrés P.', 'Gestión Pública', 'AP'],
+];
+const inicialesDe = (n) => (n || '').trim().split(/\s+/).slice(0, 2).map((p) => (p[0] || '').toUpperCase()).join('') || '·';
+
+function TestimonioCard({ q, n, r, ini }) {
+  return (
+    <div className="rounded-xl border border-linea bg-white p-4">
+      <i className="ti ti-quote text-lg text-terracotta/60" />
+      <p className="mt-1 text-[13.5px] leading-snug text-tinta/85">{q}</p>
+      <div className="mt-3 flex items-center gap-2.5">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-terracotta/15 text-[11px] font-semibold text-terracotta">{ini}</span>
+        <div><p className="text-xs font-semibold">{n}</p><p className="text-[11px] text-piedra">{r}</p></div>
+      </div>
+    </div>
+  );
+}
+
+function TestimoniosLive() {
+  const [items, setItems] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    getSb().from('testimonios').select('nombre_pila, profesion, texto')
+      .eq('estado', 'publicado').order('publicado_en', { ascending: false }).limit(6)
+      .then(({ data }) => { if (vivo) setItems(data || []); })
+      .catch(() => { if (vivo) setItems([]); });
+    return () => { vivo = false; };
+  }, []);
+
+  const lista = (items && items.length)
+    ? items.map((t) => ({ q: t.texto, n: t.nombre_pila || '', r: t.profesion || '', ini: inicialesDe(t.nombre_pila) }))
+    : EJEMPLOS_TESTIMONIOS.map(([q, n, r, ini]) => ({ q, n, r, ini }));
+
+  return (
+    <div className="space-y-3">
+      {lista.map((t, i) => <TestimonioCard key={i} {...t} />)}
+    </div>
+  );
+}
 
 export const FACETAS = [
   {
@@ -111,23 +155,6 @@ export const FACETAS = [
     tint: 'rgba(193,122,95,0.18)',
     img: '/anita/testimonios.jpg',
     voz: 'Lo que dicen quienes ya llegaron a la meta.',
-    contenido: (
-      <div className="space-y-3">
-        {[
-          ['Trabajo de lunes a sábado y tenía miedo de no terminar la maestría. Con Anita organicé mis tiempos y hoy ya tengo mi tesis aprobada.', 'Carlos R.', 'MBA', 'CR'],
-          ['La calma con la que me guió fue lo que más me ayudó. Nunca me sentí juzgada por mis dudas.', 'María F.', 'Maestría en Educación', 'MF'],
-          ['Llevaba dos años estancado. En cuatro meses con Anita logré lo que no había podido en dos años.', 'Andrés P.', 'Gestión Pública', 'AP'],
-        ].map(([q, n, r, ini]) => (
-          <div key={n} className="rounded-xl border border-linea bg-white p-4">
-            <i className="ti ti-quote text-lg text-terracotta/60" />
-            <p className="mt-1 text-[13.5px] leading-snug text-tinta/85">{q}</p>
-            <div className="mt-3 flex items-center gap-2.5">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-terracotta/15 text-[11px] font-semibold text-terracotta">{ini}</span>
-              <div><p className="text-xs font-semibold">{n}</p><p className="text-[11px] text-piedra">{r}</p></div>
-            </div>
-          </div>
-        ))}
-      </div>
-    ),
+    contenido: <TestimoniosLive />,
   },
 ];

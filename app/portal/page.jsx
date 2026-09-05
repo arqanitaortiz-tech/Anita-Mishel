@@ -35,6 +35,7 @@ export default function Portal() {
   const [notas, setNotas] = useState([]);
   const [abonos, setAbonos] = useState([]);
   const [contrato, setContrato] = useState(null);
+  const [testimonio, setTestimonio] = useState(null);
   const [necesitaOnboarding, setNecesitaOnboarding] = useState(false);
   const [modalCita, setModalCita] = useState(false);
   const [modalNota, setModalNota] = useState(null);
@@ -42,18 +43,20 @@ export default function Portal() {
 
   const cargar = useCallback(async (cid) => {
     const sb = getSb();
-    const [c, b, n, a, co] = await Promise.all([
+    const [c, b, n, a, co, te] = await Promise.all([
       sb.from('citas').select('*').eq('cliente_id', cid).order('creado', { ascending: false }),
       sb.from('bitacora').select('*').eq('cliente_id', cid).order('fecha', { ascending: true }),
       sb.from('notas_cliente').select('*').eq('cliente_id', cid).order('creado', { ascending: true }),
       sb.from('abonos').select('*').eq('cliente_id', cid).order('fecha', { ascending: true }),
       sb.from('contratos').select('*').eq('cliente_id', cid).limit(1),
+      sb.from('testimonios').select('*').eq('cliente_id', cid).limit(1),
     ]);
     setCitas(c.data || []);
     setEntradas(b.data || []);
     setNotas(n.data || []);
     setAbonos(a.data || []);
     setContrato(co.data?.[0] || null);
+    setTestimonio(te.data?.[0] || null);
     return co.data?.[0] || null;
   }, []);
 
@@ -149,6 +152,23 @@ export default function Portal() {
     window.open(data.signedUrl, '_blank');
   }
 
+  /* ---------- testimonio ---------- */
+  async function enviarTestimonio(e) {
+    e.preventDefault();
+    const texto = e.target.texto.value.trim();
+    if (texto.length < 15) { showToast('Cuéntanos unas líneas más, por favor.'); return; }
+    setGuardando(true);
+    const primer = (cliente.nombre || '').split(/\s+/)[0];
+    const { error } = await getSb().from('testimonios').insert({
+      cliente_id: cliente.id, texto, nombre_pila: primer,
+      profesion: cliente.carrera || cliente.nivel || null, estado: 'pendiente',
+    });
+    setGuardando(false);
+    if (error) { showToast('No se pudo enviar. Intenta de nuevo.'); return; }
+    await cargar(cliente.id);
+    showToast('¡Gracias por compartir tu experiencia!');
+  }
+
   /* ---------- render ---------- */
   if (sinPerfil)
     return (
@@ -188,6 +208,27 @@ export default function Portal() {
         <p className="mt-1 text-sm text-piedra">
           {[cliente.universidad, cliente.carrera].filter(Boolean).join(' · ')}
         </p>
+
+        {/* Comparte tu experiencia (solo al terminar el proceso) */}
+        {cliente.estado === 'terminado' && (
+          testimonio ? (
+            <div className="mt-6 rounded-xl border border-olivo/30 bg-salvia/30 p-5">
+              <p className="font-display text-sm font-semibold text-olivo-prof">¡Gracias por tu testimonio! 🌿</p>
+              <p className="mt-1 text-sm text-piedra">Recibimos tu experiencia y la revisaremos con cariño. Significa mucho para nosotros.</p>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-xl border border-olivo/30 bg-salvia/25 p-5">
+              <p className="font-display text-base font-semibold">¡Lo lograste! 🎓</p>
+              <p className="mt-1 text-sm text-piedra">Nos encantaría saber cómo fue tu experiencia. En pocas líneas, cuéntanos tu proceso con nosotros. Si lo publicamos, solo aparecerá tu nombre de pila y tu profesión.</p>
+              <form onSubmit={enviarTestimonio} className="mt-4">
+                <textarea name="texto" rows={4} required className="field" placeholder="Cuando empecé mi tesis..." />
+                <div className="mt-3 flex justify-end">
+                  <button className="btn-olivo !py-2 text-xs" disabled={guardando}>{guardando ? 'Enviando...' : 'Enviar mi experiencia'}</button>
+                </div>
+              </form>
+            </div>
+          )
+        )}
 
         {/* Avance de tesis + contrato */}
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
